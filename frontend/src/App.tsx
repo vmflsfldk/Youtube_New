@@ -37,16 +37,33 @@ import {
 } from "firebase/firestore";
 
 // --- Firebase Configuration & Initialization ---
-const firebaseConfig = typeof __firebase_config !== 'undefined'
-  ? JSON.parse(__firebase_config)
-  : {
-      apiKey: '',
-      authDomain: '',
-      projectId: '',
-    };
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+const firebaseConfig = (() => {
+  if (typeof __firebase_config !== 'undefined') {
+    try {
+      return JSON.parse(__firebase_config);
+    } catch (error) {
+      console.error('Failed to parse injected firebase config', error);
+    }
+  }
+
+  // Fallback to Vite environment variables for local development
+  const envConfig = {
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  };
+
+  if (envConfig.apiKey && envConfig.authDomain && envConfig.projectId) {
+    return envConfig;
+  }
+
+  console.warn('Firebase config missing. Skipping Firebase initialization.');
+  return null;
+})();
+
+const app = firebaseConfig ? initializeApp(firebaseConfig) : null;
+const auth = app ? getAuth(app) : null;
+const db = app ? getFirestore(app) : null;
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- Domain Services (Simulating Spring Boot Backend Logic) ---
@@ -186,6 +203,11 @@ export default function App() {
 
   // --- Auth & Data Fetching ---
   useEffect(() => {
+    if (!auth) {
+      console.warn('Firebase auth unavailable; skipping auth initialization.');
+      return;
+    }
+
     const initAuth = async () => {
       if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
         await signInWithCustomToken(auth, __initial_auth_token);
@@ -207,6 +229,10 @@ export default function App() {
 
   // --- Google Login & Logout Handlers ---
   const handleGoogleLogin = async () => {
+    if (!auth) {
+      alert('로그인 기능을 사용할 수 없습니다. Firebase 구성이 비어 있습니다.');
+      return;
+    }
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
@@ -217,6 +243,7 @@ export default function App() {
   };
 
   const handleLogout = async () => {
+    if (!auth) return;
     try {
       await signOut(auth);
       // 로그아웃 후에는 onAuthStateChanged가 자동으로 익명 로그인을 다시 수행합니다.
@@ -226,7 +253,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !db) return;
 
     const qArtists = query(collection(db, 'artifacts', appId, 'users', user.uid, 'artists'), orderBy('createdAt', 'desc'));
     const unsubArtists = onSnapshot(qArtists, (snapshot) => setArtists(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
