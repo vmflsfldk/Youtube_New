@@ -260,33 +260,97 @@ export default function App() {
   const playerRef = useRef(null);
   const playerIntervalRef = useRef(null);
 
-  // --- Auth & Data Fetching ---
+  const [isGoogleSdkReady, setIsGoogleSdkReady] = useState(false);
+  const googleInitRef = useRef(false);
+  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
   useEffect(() => {
-    const demoUser = {
-      uid: 'd1-demo-user',
-      displayName: import.meta.env.VITE_DEMO_USER_NAME || 'D1 Demo User',
-      email: import.meta.env.VITE_DEMO_USER_EMAIL || 'demo@d1.local',
-      photoURL: null,
-      isAnonymous: false,
+    const existing = document.querySelector('script[data-google-identity]');
+    if (existing) {
+      setIsGoogleSdkReady(true);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.dataset.googleIdentity = 'true';
+    script.onload = () => setIsGoogleSdkReady(true);
+    script.onerror = () => console.error('Google Identity Services SDK 로드에 실패했습니다.');
+    document.head.appendChild(script);
+
+    return () => {
+      script.remove();
     };
-    setUser(demoUser);
   }, []);
+
+  const ensureAuthenticated = useCallback(() => {
+    if (!user) {
+      alert('Google 계정으로 로그인 후 이용 가능합니다.');
+      return false;
+    }
+    return true;
+  }, [user]);
 
   // --- Google Login & Logout Handlers ---
   const handleGoogleLogin = async () => {
-    const email = window.prompt('Cloudflare D1 세션용 이메일을 입력하세요', user?.email || 'demo@d1.local');
-    const displayName = window.prompt('표시 이름을 입력하세요', user?.displayName || 'D1 Demo User');
-    if (!email) return;
-    setUser({
-      uid: `d1-${Date.now()}`,
-      displayName: displayName || '사용자',
-      email,
-      photoURL: null,
-      isAnonymous: false,
-    });
+    if (!GOOGLE_CLIENT_ID) {
+      alert('Google OAuth Client ID가 설정되지 않았습니다.');
+      return;
+    }
+
+    if (!isGoogleSdkReady || !window.google?.accounts?.id) {
+      alert('Google 로그인 모듈을 불러오는 중입니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+
+    if (!googleInitRef.current) {
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: ({ credential }) => {
+          if (!credential) return;
+
+          try {
+            const payload = JSON.parse(
+              atob(
+                credential
+                  .split('.')[1]
+                  .replace(/-/g, '+')
+                  .replace(/_/g, '/')
+              )
+            );
+
+            setUser({
+              uid: payload.sub,
+              displayName: payload.name || payload.email,
+              email: payload.email,
+              photoURL: payload.picture,
+              isAnonymous: false,
+            });
+          } catch (error) {
+            console.error('Google ID 토큰 파싱 실패', error);
+            alert('Google 로그인 중 문제가 발생했습니다. 다시 시도해주세요.');
+          }
+        },
+        cancel_on_tap_outside: true,
+      });
+      googleInitRef.current = true;
+    }
+
+    window.google.accounts.id.prompt();
   };
 
   const handleLogout = async () => {
+    if (user?.email && window.google?.accounts?.id) {
+      window.google.accounts.id.revoke(user.email, () => {
+        setUser(null);
+        setFavorites(new Set());
+        setSavedPlaylists([]);
+      });
+      return;
+    }
+
     setUser(null);
     setFavorites(new Set());
     setSavedPlaylists([]);
@@ -410,6 +474,7 @@ export default function App() {
 
   const toggleFavorite = async (e, artist) => {
     e.stopPropagation();
+    if (!ensureAuthenticated()) return;
     const isFav = favorites.has(artist.id);
     const favRef = collection(db, 'artifacts', appId, 'users', user.uid, 'favorite_artists');
 
@@ -510,6 +575,7 @@ export default function App() {
     const [isCreating, setIsCreating] = useState(false);
 
     const saveCurrentQueue = async () => {
+        if (!ensureAuthenticated()) return;
         const name = prompt("새 플레이리스트 이름을 입력하세요:");
         if (!name) return;
         
@@ -522,6 +588,7 @@ export default function App() {
     };
 
     const createEmptyPlaylist = async () => {
+        if (!ensureAuthenticated()) return;
         if (!newPlaylistName) return;
         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'playlists'), {
             name: newPlaylistName,
@@ -539,6 +606,7 @@ export default function App() {
 
     const deletePlaylist = async (e, id) => {
         e.stopPropagation();
+        if (!ensureAuthenticated()) return;
         if (window.confirm("정말 삭제하시겠습니까?")) {
             await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'playlists', id));
         }
@@ -709,6 +777,7 @@ export default function App() {
     }, [artists, searchTerm]);
 
     const handleRegisterAndSuggest = async () => {
+         if (!ensureAuthenticated()) return;
          if (!url || !selectedArtistId) return;
          setIsLoading(true);
          const res = await mockRegisterAndSuggestVideo(url);
@@ -1218,6 +1287,7 @@ export default function App() {
 
       const handleSubmit = async (e) => {
         e.preventDefault();
+        if (!ensureAuthenticated()) return;
         const primaryName = names.ko || names.en || names.ja || fetchedInfo.title;
         
         // DB 스키마 및 ArtistRequest DTO에 맞춘 데이터 구조
@@ -1379,6 +1449,7 @@ export default function App() {
     const [url, setUrl] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const handleRegisterAndSuggest = async () => {
+         if (!ensureAuthenticated()) return;
          if (!url) return;
          setIsLoading(true);
          const res = await mockRegisterAndSuggestVideo(url);
@@ -1484,6 +1555,7 @@ export default function App() {
     };
 
     const saveClip = async () => {
+      if (!ensureAuthenticated()) return;
       if (!clipTitle) return alert("제목을 입력해주세요.");
       if (startTime >= endTime) return alert("종료 시간은 시작 시간보다 뒤여야 합니다.");
       const isDuplicate = clips.some(c => c.videoId === selectedVideo.id && Math.abs(c.startTime - startTime) < 1 && Math.abs(c.endTime - endTime) < 1);
