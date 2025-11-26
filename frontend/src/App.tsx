@@ -106,20 +106,34 @@ const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- Domain Services (Simulating Spring Boot Backend Logic) ---
 
-const mockFetchChannelInfo = async (channelId) => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        success: true,
-        data: {
-          title: "Simulated Artist Channel",
-          description: "Official Channel",
-          thumbnailUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${channelId}`,
-          subscriberCount: "1.5M"
-        }
-      });
-    }, 600);
-  });
+const formatSubscriberCount = (raw) => {
+  if (raw === null || raw === undefined) return "정보 없음";
+  const num = Number(raw);
+  if (Number.isNaN(num)) return String(raw);
+  return new Intl.NumberFormat('ko-KR', { notation: "compact", maximumFractionDigits: 1 }).format(num);
+};
+
+const fetchChannelInfo = async (channelId) => {
+  const endpoint = `/api/public/youtube-channel?channelId=${encodeURIComponent(channelId)}`;
+  try {
+    const response = await fetch(endpoint);
+    if (!response.ok) {
+      return { success: false, error: `status_${response.status}` };
+    }
+    const data = await response.json();
+    return {
+      success: true,
+      data: {
+        title: data.title || "채널 정보 없음",
+        description: "",
+        thumbnailUrl: data.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${channelId}`,
+        subscriberCount: formatSubscriberCount(data.subscriberCount)
+      }
+    };
+  } catch (error) {
+    console.error("채널 정보를 불러오지 못했습니다.", error);
+    return { success: false, error: "network_error" };
+  }
 };
 
 const mockCheckLiveStatus = async (artists) => {
@@ -1202,7 +1216,7 @@ export default function App() {
          const normalized = normalizeChannelInput(channelId);
          if (!normalized) return;
          setIsLoading(true);
-         const res = await mockFetchChannelInfo(normalized);
+         const res = await fetchChannelInfo(normalized);
          setIsLoading(false);
          if (res.success) {
             setFetchedInfo(res.data);
