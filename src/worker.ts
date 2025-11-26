@@ -3217,17 +3217,18 @@ async function autoDetect(
 }
 
 async function getUserFromHeaders(env: Env, headers: Headers): Promise<UserContext | null> {
-  // [수정] 1. 테스트용 헤더(X-User-Email)가 있으면 해당 유저로 인증 처리
+  // [추가됨] 테스트용 헤더(X-User-Email)가 있으면 해당 유저로 인증 처리
   const email = headers.get("X-User-Email");
   if (email && email.trim().length > 0) {
     const displayName = headers.get("X-User-Name");
+    // 해당 이메일로 사용자를 생성하거나 조회하여 반환
     return await upsertUser(env, email, displayName);
   }
 
-  // 2. 기존 구글 토큰 인증 (실제 서비스용)
+  // 기존 Google OAuth 토큰 확인 로직
   const authorization = headers.get("Authorization");
   if (!authorization) {
-    return null; // 헤더가 둘 다 없으면 401 반환
+    return null;
   }
   const match = authorization.match(/^Bearer\s+(.+)$/i);
   if (!match) {
