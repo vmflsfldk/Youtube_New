@@ -17,8 +17,11 @@ export const onRequest = async (ctx: Parameters<typeof handleProxyRequest>[0]) =
   const missingDb = !("DB" in ctx.env && ctx.env.DB);
   const useProxy = !allowLocalWithoutDb && (shouldUseProxy(ctx.env) || missingDb);
 
+  const isAuthPath = new URL(ctx.request.url).pathname.startsWith("/api/auth/");
+  const upstreamPrefix = isAuthPath ? null : "api";
+
   if (useProxy) {
-    return handleProxyRequest(ctx, { upstreamPrefix: "api" });
+    return handleProxyRequest(ctx, { upstreamPrefix });
   }
 
   if (ctx.request.method === "OPTIONS") {
