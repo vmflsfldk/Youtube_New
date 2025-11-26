@@ -94,6 +94,41 @@ class ArtistServiceTest {
     }
 
     @Test
+    void createArtistUsesChannelMetadataForDisplayNameAndProfileImage() {
+        ArtistRequest request = new ArtistRequest(
+                "기본 이름",
+                "Base Name",
+                null,
+                List.of(new LocalizedTextRequest("en", "Localized Name")),
+                "channel-456",
+                null,
+                true,
+                true,
+                false,
+                List.of(),
+                null);
+        UserAccount creator = new UserAccount("creator@example.com", "Creator");
+
+        when(channelMetadataProvider.fetch("channel-456"))
+                .thenReturn(new ChannelMetadata("Fetched Title", "https://example.com/profile.jpg"));
+        when(artistRepository.save(any(Artist.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ArtistResponse response = artistService.createArtist(request, creator);
+
+        ArgumentCaptor<Artist> artistCaptor = ArgumentCaptor.forClass(Artist.class);
+        verify(artistRepository).save(artistCaptor.capture());
+        Artist saved = artistCaptor.getValue();
+
+        assertThat(saved.getDisplayName()).isEqualTo("Fetched Title");
+        assertThat(saved.getYoutubeChannelTitle()).isEqualTo("Fetched Title");
+        assertThat(saved.getProfileImageUrl()).isEqualTo("https://example.com/profile.jpg");
+
+        assertThat(response.displayName()).isEqualTo("Fetched Title");
+        assertThat(response.youtubeChannelTitle()).isEqualTo("Fetched Title");
+        assertThat(response.profileImageUrl()).isEqualTo("https://example.com/profile.jpg");
+    }
+
+    @Test
     void updateProfileUpdatesLocalizedNames() {
         UserAccount creator = new UserAccount("user@example.com", "User");
         Artist existing = new Artist("Original", "Original", "channel-123", creator, true, true, true);
