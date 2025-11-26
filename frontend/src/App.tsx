@@ -426,7 +426,7 @@ export default function App() {
   // --- Layout Components ---
 
   const Sidebar = () => (
-    <div className="w-60 bg-[#030303] h-full flex flex-col pt-4 hidden md:flex flex-shrink-0 z-20 border-r border-[#1A1A1A]">
+    <div className="w-60 bg-[#030303] h-full flex flex-col pt-4 pb-24 hidden md:flex flex-shrink-0 z-20 border-r border-[#1A1A1A]">
       <div className="px-6 flex items-center gap-1 text-white font-bold text-xl cursor-pointer mb-8" onClick={() => setView('home')}>
         <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center">
            <Play fill="white" size={14} className="ml-0.5" />
