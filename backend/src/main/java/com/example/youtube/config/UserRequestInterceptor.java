@@ -1,6 +1,7 @@
 package com.example.youtube.config;
 
 import com.example.youtube.model.UserAccount;
+import com.example.youtube.service.TokenService;
 import com.example.youtube.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -13,15 +14,34 @@ public class UserRequestInterceptor implements HandlerInterceptor {
     public static final String CURRENT_USER_ATTR = "currentUser";
 
     private final UserService userService;
+    private final TokenService tokenService;
 
-    public UserRequestInterceptor(UserService userService) {
+    public UserRequestInterceptor(UserService userService, TokenService tokenService) {
         this.userService = userService;
+        this.tokenService = tokenService;
     }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-        String email = request.getHeader("X-User-Email");
-        String displayName = request.getHeader("X-User-Name");
+        String email = null;
+        String displayName = null;
+
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            TokenService.TokenPayload payload = tokenService.parseToken(token);
+            if (payload != null) {
+                email = payload.email();
+                displayName = payload.displayName();
+            }
+        }
+
+        if (email == null || email.isBlank()) {
+            email = request.getHeader("X-User-Email");
+        }
+        if (displayName == null || displayName.isBlank()) {
+            displayName = request.getHeader("X-User-Name");
+        }
         if (email == null || email.isBlank()) {
             email = "guest@example.com";
         }
