@@ -204,7 +204,7 @@ const mockAnalyzeVideo = (duration) => {
 
 const buildApiHeaders = (user) => {
   const headers = { "Content-Type": "application/json" };
-  // [수정] 헤더 이름을 백엔드 로직과 일치시킴 (X-Demo -> X-User)
+  // 백엔드 로직과 일치하도록 'X-User-Email'로 변경
   if (user?.email) headers["X-User-Email"] = user.email;
   if (user?.displayName) headers["X-User-Name"] = user.displayName;
   return headers;
