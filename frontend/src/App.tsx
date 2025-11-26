@@ -1723,7 +1723,55 @@ export default function App() {
     );
   };
 
-  if (!user) return <div className="h-screen bg-black text-white flex items-center justify-center">Loading...</div>;
+  if (!user) {
+    const isGoogleReady = isGoogleSdkReady && GOOGLE_CLIENT_ID;
+
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center px-6">
+        <div className="max-w-md w-full space-y-6 text-center">
+          <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center mx-auto">
+            <Play fill="white" size={24} className="ml-0.5" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-3xl font-bold">유튜브 라이브 클립 스튜디오</h1>
+            <p className="text-[#AAAAAA] text-sm leading-relaxed">
+              맞춤형 라이브 클립을 생성하고 플레이리스트를 관리하려면 Google 계정으로 로그인해 주세요.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <button
+              onClick={handleGoogleLogin}
+              disabled={!isGoogleReady}
+              className="w-full bg-white text-black font-bold py-3 rounded-lg hover:bg-[#F1F1F1] disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+            >
+              <img src="https://developers.google.com/identity/images/g-logo.png" alt="Google" className="w-5 h-5" />
+              {isGoogleReady ? "Google 계정으로 시작하기" : "Google 모듈을 불러오는 중..."}
+            </button>
+
+            <button
+              onClick={() => setUser({
+                uid: 'demo-user',
+                displayName: '게스트',
+                email: '',
+                photoURL: '',
+                isAnonymous: true,
+              })}
+              className="w-full bg-[#181818] text-white font-semibold py-3 rounded-lg hover:bg-[#222] border border-[#282828] transition-colors"
+            >
+              로그인 없이 둘러보기 (데모 모드)
+            </button>
+          </div>
+
+          {!GOOGLE_CLIENT_ID && (
+            <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+              환경 변수 VITE_GOOGLE_CLIENT_ID 가 설정되어 있지 않아 실제 로그인은 비활성화되어 있습니다.
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-[#030303] text-white font-sans overflow-hidden select-none">
