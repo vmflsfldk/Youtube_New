@@ -1168,14 +1168,48 @@ export default function App() {
       const [names, setNames] = useState({ ko: "", en: "", ja: "" });
       const [tags, setTags] = useState("");
 
+      const normalizeChannelInput = (input) => {
+        const trimmed = (input || "").trim();
+        if (!trimmed) return "";
+        if (/^UC[0-9A-Za-z_-]{22}$/i.test(trimmed)) return trimmed; // channel id
+        if (trimmed.startsWith("@")) return trimmed; // handle
+
+        try {
+          const url = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+          const host = url.hostname.toLowerCase();
+          const isYouTubeHost = host === "youtube.com" || host.endsWith(".youtube.com") || host === "youtu.be";
+          if (!isYouTubeHost) return trimmed;
+
+          const segments = url.pathname
+            .split("/")
+            .map(s => s.trim())
+            .filter(Boolean);
+
+          if (segments.length === 0) return trimmed;
+          const [first, second] = segments;
+
+          if (first.startsWith("@")) return first; // /@handle
+          if (first.toLowerCase() === "channel" && second) return second; // /channel/UC...
+          if (["c", "user"].includes(first.toLowerCase()) && second) return second; // /c/custom or /user/
+
+          return trimmed;
+        } catch (err) {
+          return trimmed;
+        }
+      };
+
       const handleFetch = async () => {
-         if (!channelId) return;
+         const normalized = normalizeChannelInput(channelId);
+         if (!normalized) return;
          setIsLoading(true);
-         const res = await mockFetchChannelInfo(channelId);
+         const res = await mockFetchChannelInfo(normalized);
          setIsLoading(false);
          if (res.success) {
             setFetchedInfo(res.data);
             setNames(prev => ({ ...prev, ko: res.data.title }));
+            if (normalized !== channelId) {
+              setChannelId(normalized);
+            }
             setStep(2);
          } else {
             alert("채널을 찾을 수 없습니다.");
