@@ -1438,6 +1438,10 @@ async function handleApi(
       return await listPublicPlaylists(env, cors);
     }
 
+    if (request.method === "GET" && path === "/api/public/youtube-channel") {
+      return await publicChannelPreview(url, env, cors);
+    }
+
     const user = await getUserFromHeaders(env, request.headers);
 
     if (request.method === "POST" && path === "/api/artists/preview") {
@@ -1575,6 +1579,62 @@ async function previewArtist(
       channelUrl,
       debug: metadata.debug,
       videos: filteredVideos
+    },
+    200,
+    cors
+  );
+}
+
+async function publicChannelPreview(url: URL, env: Env, cors: CorsConfig): Promise<Response> {
+  const rawChannelId = url.searchParams.get("channelId") ?? "";
+  const channelId = rawChannelId.trim();
+  if (!channelId) {
+    throw new HttpError(400, "channelId is required");
+  }
+
+  const metadata = await testOverrides.fetchChannelMetadata(env, channelId);
+  const resolvedChannelId = metadata.channelId?.trim() || metadata.debug.identifier.channelId || null;
+
+  let subscriberCount: string | null = null;
+  let title = metadata.title;
+  let profileImageUrl = metadata.profileImageUrl;
+
+  const apiKey = env.YOUTUBE_API_KEY?.trim();
+  if (apiKey && resolvedChannelId) {
+    const statsUrl = new URL("https://www.googleapis.com/youtube/v3/channels");
+    statsUrl.searchParams.set("part", "snippet,statistics");
+    statsUrl.searchParams.set("id", resolvedChannelId);
+    statsUrl.searchParams.set("key", apiKey);
+
+    try {
+      const response = await fetch(statsUrl.toString(), { method: "GET" });
+      if (response.ok) {
+        const payload = (await response.json()) as YouTubeChannelsResponse;
+        const item = Array.isArray(payload.items) ? payload.items[0] ?? null : null;
+        if (item?.statistics?.subscriberCount) {
+          subscriberCount = item.statistics.subscriberCount;
+        }
+        if (!title && item?.snippet) {
+          title = sanitizeSnippetTitle(item.snippet);
+        }
+        if (!profileImageUrl && item?.snippet?.thumbnails) {
+          profileImageUrl = selectThumbnailUrl(item.snippet.thumbnails);
+        }
+      } else {
+        console.warn(`Failed to fetch channel statistics for ${channelId}: ${response.status}`);
+      }
+    } catch (error) {
+      console.warn(`Failed to fetch channel statistics for ${channelId}`, error);
+    }
+  }
+
+  return jsonResponse(
+    {
+      channelId: resolvedChannelId ?? channelId,
+      title: title ?? null,
+      profileImageUrl: profileImageUrl ?? null,
+      subscriberCount,
+      debug: metadata.debug
     },
     200,
     cors
@@ -3850,9 +3910,14 @@ interface YouTubeVideoItemWithChapters extends YouTubeVideoItem {
   };
 }
 
+interface YouTubeChannelStatistics {
+  subscriberCount?: string;
+}
+
 interface YouTubeChannelItem {
   id?: string;
   snippet?: YouTubeSnippet;
+  statistics?: YouTubeChannelStatistics;
 }
 
 interface YouTubeChannelsResponse {
