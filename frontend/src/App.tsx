@@ -113,10 +113,19 @@ const formatSubscriberCount = (raw) => {
   return new Intl.NumberFormat('ko-KR', { notation: "compact", maximumFractionDigits: 1 }).format(num);
 };
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+
+const buildApiUrl = (path) => {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return API_BASE_URL ? `${API_BASE_URL}${normalizedPath}` : normalizedPath;
+};
+
+const apiFetch = (path, init) => fetch(buildApiUrl(path), init);
+
 const fetchChannelInfo = async (channelId) => {
   const endpoint = `/api/public/youtube-channel?channelId=${encodeURIComponent(channelId)}`;
   try {
-    const response = await fetch(endpoint);
+    const response = await apiFetch(endpoint);
     if (!response.ok) {
       return { success: false, error: `status_${response.status}` };
     }
@@ -296,7 +305,7 @@ export default function App() {
   }, [user]);
 
   const requestApiToken = async (profile, credential) => {
-    const response = await fetch('/api/auth/google', {
+    const response = await apiFetch('/api/auth/google', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1338,7 +1347,7 @@ export default function App() {
 
         // Cloudflare Worker API에도 즉시 반영
         try {
-          const apiResponse = await fetch('/api/artists', {
+          const apiResponse = await apiFetch('/api/artists', {
             method: 'POST',
             headers: buildApiHeaders(user),
             body: JSON.stringify({
@@ -1484,7 +1493,7 @@ export default function App() {
              try {
                const artistIdForApi = Number(selectedArtist?.d1Id ?? selectedArtist?.id);
                if (Number.isFinite(artistIdForApi)) {
-                 const apiResponse = await fetch('/api/videos', {
+                 const apiResponse = await apiFetch('/api/videos', {
                    method: 'POST',
                    headers: buildApiHeaders(user),
                    body: JSON.stringify({
@@ -1591,7 +1600,7 @@ export default function App() {
       try {
         const videoD1Id = Number(selectedVideo?.d1Id ?? selectedVideo?.id);
         if (Number.isFinite(videoD1Id)) {
-          const apiResponse = await fetch('/api/clips', {
+          const apiResponse = await apiFetch('/api/clips', {
             method: 'POST',
             headers: buildApiHeaders(user),
             body: JSON.stringify({
