@@ -1434,6 +1434,10 @@ async function handleApi(
 
     await ensureDatabaseSchema(env.DB);
 
+    if (request.method === "POST" && path === "/api/auth/google") {
+      return await loginWithGoogle(request, env, cors);
+    }
+
     if (request.method === "POST" && path === "/api/users/login") {
       return await loginUser(request, env, cors);
     }
@@ -3245,6 +3249,32 @@ async function getUserFromHeaders(env: Env, headers: Headers): Promise<UserConte
     }
   }
   return null;
+}
+
+async function loginWithGoogle(request: Request, env: Env, cors: CorsConfig): Promise<Response> {
+  const body = await readJson(request);
+  const tokenRaw = typeof body.token === "string" ? body.token : "";
+  const token = tokenRaw.trim();
+  if (!token) {
+    throw new HttpError(400, "token is required");
+  }
+
+  const verified = await verifyGoogleIdToken(env, token);
+  if (!verified) {
+    throw new HttpError(401, "Invalid Google token");
+  }
+
+  const emailRaw = typeof body.email === "string" ? body.email : "";
+  const email = emailRaw.trim();
+  if (email && email.toLowerCase() !== verified.email.toLowerCase()) {
+    throw new HttpError(401, "Google token email does not match request email");
+  }
+
+  const displayNameRaw = typeof body.displayName === "string" ? body.displayName : verified.displayName;
+  const displayName = displayNameRaw && displayNameRaw.trim() ? displayNameRaw.trim() : null;
+
+  const user = await upsertUser(env, verified.email, displayName);
+  return jsonResponse({ token, user }, 200, cors);
 }
 
 async function loginUser(request: Request, env: Env, cors: CorsConfig): Promise<Response> {
