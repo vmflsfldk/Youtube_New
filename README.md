@@ -186,6 +186,7 @@ npm run dev
   - `GET /api/library/media`와 `GET /api/library/songs`는 숨김 여부와 콘텐츠 유형을 고려해 영상/클립을 묶어 제공합니다.【F:src/worker.ts†L2333-L2406】
   - `GET /api/public/library`와 `GET /api/public/songs`는 인증 없이도 공개 라이브러리를 조회하게 합니다.【F:src/worker.ts†L2347-L2354】
   - `GET /api/public/clips`는 공개 플레이리스트를 정렬해 반환합니다.【F:src/worker.ts†L2943-L2952】
+  - `GET /api/public/youtube-channel?channelId=`는 인증 없이 채널 ID나 핸들을 전달하면 채널 제목·프로필 이미지·구독자 수를 조회합니다. `channelId` 파라미터가 없으면 400 에러를 반환하며, `YOUTUBE_API_KEY`가 설정된 경우 YouTube Data API를 호출해 누락된 제목과 썸네일을 보강합니다.【F:src/worker.ts†L1419-L1456】【F:src/worker.ts†L1588-L1628】
 - **플레이리스트 관리**
   - `POST /api/playlists`는 제목과 공개 범위를 검증해 플레이리스트를 생성합니다.【F:src/worker.ts†L2802-L2834】
   - `GET /api/playlists`는 소유자의 최신 플레이리스트와 항목을 함께 제공합니다.【F:src/worker.ts†L2787-L2800】
