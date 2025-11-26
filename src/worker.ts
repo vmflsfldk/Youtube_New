@@ -3217,6 +3217,12 @@ async function autoDetect(
 }
 
 async function getUserFromHeaders(env: Env, headers: Headers): Promise<UserContext | null> {
+  const headerEmail = headers.get("X-User-Email");
+  if (headerEmail && headerEmail.trim().length > 0) {
+    const displayName = headers.get("X-User-Name");
+    return await upsertUser(env, headerEmail, displayName);
+  }
+
   const demoEmail = headers.get("X-Demo-Email");
   if (demoEmail) {
     const demoName = headers.get("X-Demo-Name");
