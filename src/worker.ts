@@ -3217,21 +3217,17 @@ async function autoDetect(
 }
 
 async function getUserFromHeaders(env: Env, headers: Headers): Promise<UserContext | null> {
-  const headerEmail = headers.get("X-User-Email");
-  if (headerEmail && headerEmail.trim().length > 0) {
+  // [수정] 1. 테스트용 헤더(X-User-Email)가 있으면 해당 유저로 인증 처리
+  const email = headers.get("X-User-Email");
+  if (email && email.trim().length > 0) {
     const displayName = headers.get("X-User-Name");
-    return await upsertUser(env, headerEmail, displayName);
+    return await upsertUser(env, email, displayName);
   }
 
-  const demoEmail = headers.get("X-Demo-Email");
-  if (demoEmail) {
-    const demoName = headers.get("X-Demo-Name");
-    return await upsertUser(env, demoEmail, demoName);
-  }
-
+  // 2. 기존 구글 토큰 인증 (실제 서비스용)
   const authorization = headers.get("Authorization");
   if (!authorization) {
-    return null;
+    return null; // 헤더가 둘 다 없으면 401 반환
   }
   const match = authorization.match(/^Bearer\s+(.+)$/i);
   if (!match) {
