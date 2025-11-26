@@ -1428,6 +1428,10 @@ async function handleApi(
   path: string
 ): Promise<Response> {
   try {
+    if (request.method === "GET" && path === "/api/public/youtube-channel") {
+      return await publicChannelPreview(url, env, cors);
+    }
+
     await ensureDatabaseSchema(env.DB);
 
     if (request.method === "POST" && path === "/api/users/login") {
@@ -1436,10 +1440,6 @@ async function handleApi(
 
     if (request.method === "GET" && path === "/api/public/clips") {
       return await listPublicPlaylists(env, cors);
-    }
-
-    if (request.method === "GET" && path === "/api/public/youtube-channel") {
-      return await publicChannelPreview(url, env, cors);
     }
 
     const user = await getUserFromHeaders(env, request.headers);

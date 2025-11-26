@@ -6,8 +6,16 @@ const shouldUseProxy = (env: { API_PROXY_BASE_URL?: string; API_PROXY_ORIGIN?: s
   return typeof raw === "string" && raw.trim().length > 0;
 };
 
+const isDatabaseFreeEndpoint = (request: Request): boolean => {
+  const url = new URL(request.url);
+  const path = url.pathname.replace(/\/+$/, "") || "/";
+  return path === "/api/public/youtube-channel";
+};
+
 export const onRequest = async (ctx: Parameters<typeof handleProxyRequest>[0]) => {
-  const useProxy = shouldUseProxy(ctx.env) || !("DB" in ctx.env && ctx.env.DB);
+  const allowLocalWithoutDb = isDatabaseFreeEndpoint(ctx.request);
+  const missingDb = !("DB" in ctx.env && ctx.env.DB);
+  const useProxy = !allowLocalWithoutDb && (shouldUseProxy(ctx.env) || missingDb);
 
   if (useProxy) {
     return handleProxyRequest(ctx, { upstreamPrefix: "api" });
