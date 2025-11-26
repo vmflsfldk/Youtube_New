@@ -1179,64 +1179,71 @@ export default function App() {
       const [channelId, setChannelId] = useState("");
       const [isLoading, setIsLoading] = useState(false);
       const [fetchedInfo, setFetchedInfo] = useState(null);
+      
+      // DB 필드에 맞춘 상태 관리
       const [names, setNames] = useState({ ko: "", en: "", ja: "" });
+      const [agency, setAgency] = useState("");
       const [tags, setTags] = useState("");
-
-      const normalizeChannelInput = (input) => {
-        const trimmed = (input || "").trim();
-        if (!trimmed) return "";
-        if (/^UC[0-9A-Za-z_-]{22}$/i.test(trimmed)) return trimmed; // channel id
-        if (trimmed.startsWith("@")) return trimmed; // handle
-
-        try {
-          const url = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
-          const host = url.hostname.toLowerCase();
-          const isYouTubeHost = host === "youtube.com" || host.endsWith(".youtube.com") || host === "youtu.be";
-          if (!isYouTubeHost) return trimmed;
-
-          const segments = url.pathname
-            .split("/")
-            .map(s => s.trim())
-            .filter(Boolean);
-
-          if (segments.length === 0) return trimmed;
-          const [first, second] = segments;
-
-          if (first.startsWith("@")) return first; // /@handle
-          if (first.toLowerCase() === "channel" && second) return second; // /channel/UC...
-          if (["c", "user"].includes(first.toLowerCase()) && second) return second; // /c/custom or /user/
-
-          return trimmed;
-        } catch (err) {
-          return trimmed;
-        }
-      };
+      const [countries, setCountries] = useState({
+          kr: false,
+          en: false,
+          jp: false
+      });
 
       const handleFetch = async () => {
-         const normalized = normalizeChannelInput(channelId);
-         if (!normalized) return;
+         if (!channelId) return;
          setIsLoading(true);
-         const res = await fetchChannelInfo(normalized);
+         const res = await fetchChannelInfo(channelId);
          setIsLoading(false);
          if (res.success) {
             setFetchedInfo(res.data);
+            // 채널 제목을 기본적으로 한국어 이름으로 설정 (필요시 변경 가능)
             setNames(prev => ({ ...prev, ko: res.data.title }));
-            if (normalized !== channelId) {
-              setChannelId(normalized);
-            }
             setStep(2);
          } else {
             alert("채널을 찾을 수 없습니다.");
          }
       };
 
+      const toggleCountry = (code) => {
+          setCountries(prev => ({ ...prev, [code]: !prev[code] }));
+      };
+
       const handleSubmit = async (e) => {
         e.preventDefault();
         const primaryName = names.ko || names.en || names.ja || fetchedInfo.title;
-        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'artists'), {
-          youtubeChannelId: channelId,
-          name: primaryName, primaryName, names, tags: tags.split(',').map(t => t.trim()), imageUrl: fetchedInfo.thumbnailUrl, subscriberCount: fetchedInfo.subscriberCount, createdAt: serverTimestamp()
-        });
+        
+        // DB 스키마 및 ArtistRequest DTO에 맞춘 데이터 구조
+        const newArtist = {
+            youtubeChannelId: channelId,
+            name: primaryName,
+            primaryName, // UI용 (필요시)
+            names, // 다국어 이름 객체 (API 요청 시 풀어서 보냄)
+            nameKo: names.ko,
+            nameEn: names.en,
+            nameJp: names.ja,
+            agency: agency, // 소속사
+            availableKo: countries.kr, // 활동 국가 플래그
+            availableEn: countries.en,
+            availableJp: countries.jp,
+            tags: tags.split(',').map(t => t.trim()).filter(t => t), // 태그 배열 변환
+            imageUrl: fetchedInfo.thumbnailUrl,
+            subscriberCount: fetchedInfo.subscriberCount,
+            createdAt: serverTimestamp()
+        };
+
+        // Firestore(또는 D1 Mock)에 저장
+        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'artists'), newArtist);
+        
+        // 폼 초기화 및 이동
+        setStep(1);
+        setChannelId("");
+        setFetchedInfo(null);
+        setNames({ ko: "", en: "", ja: "" });
+        setAgency("");
+        setTags("");
+        setCountries({ kr: false, en: false, jp: false });
+        
         setView('artist_list');
       };
 
@@ -1244,18 +1251,27 @@ export default function App() {
           <div className="p-10 flex flex-col items-center animate-in fade-in zoom-in-95 duration-300">
              <h2 className="text-2xl font-bold text-white mb-2">아티스트 등록</h2>
              <p className="text-[#AAAAAA] text-sm mb-8">YouTube 채널 ID로 아티스트 정보를 자동으로 가져옵니다.</p>
+             
              {step === 1 && (
                 <div className="w-full max-w-md space-y-4">
                     <div className="relative">
                        <Search className="absolute left-3 top-3.5 text-[#AAAAAA]" size={18}/>
-                       <input value={channelId} onChange={e => setChannelId(e.target.value)} placeholder="YouTube Channel ID (e.g. UC...)" className="bg-[#181818] text-white pl-10 pr-4 py-3 rounded-lg w-full border border-[#333] focus:border-red-500 outline-none transition-colors"/>
+                       <input 
+                            value={channelId} 
+                            onChange={e => setChannelId(e.target.value)} 
+                            placeholder="YouTube Channel ID (e.g. UC...)" 
+                            className="bg-[#181818] text-white pl-10 pr-4 py-3 rounded-lg w-full border border-[#333] focus:border-red-500 outline-none transition-colors"
+                        />
                     </div>
                     <div className="flex gap-2 pt-2">
                         <button onClick={() => setView('artist_list')} className="flex-1 py-3 text-[#AAAAAA] hover:text-white">취소</button>
-                        <button onClick={handleFetch} disabled={isLoading || !channelId} className="flex-1 bg-white text-black font-bold rounded-lg hover:bg-[#F1F1F1] disabled:opacity-50 flex items-center justify-center gap-2">{isLoading ? "검색 중..." : "채널 검색"}</button>
+                        <button onClick={handleFetch} disabled={isLoading || !channelId} className="flex-1 bg-white text-black font-bold rounded-lg hover:bg-[#F1F1F1] disabled:opacity-50 flex items-center justify-center gap-2">
+                            {isLoading ? "검색 중..." : "채널 검색"}
+                        </button>
                     </div>
                 </div>
              )}
+
              {step === 2 && fetchedInfo && (
                 <form onSubmit={handleSubmit} className="w-full max-w-md space-y-6 bg-[#181818] p-6 rounded-xl border border-[#333]">
                     <div className="flex items-center gap-4 pb-4 border-b border-[#333]">
@@ -1266,16 +1282,55 @@ export default function App() {
                         </div>
                         <CheckCircle2 className="text-green-500 ml-auto" />
                     </div>
+
+                    {/* 활동 국가 체크박스 */}
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-[#AAAAAA]">활동 국가 (다중 선택 가능)</label>
+                        <div className="flex gap-4">
+                            {['KR', 'EN', 'JP'].map((code) => (
+                                <label key={code} className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={countries[code.toLowerCase()]} 
+                                        onChange={() => toggleCountry(code.toLowerCase())}
+                                        className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 bg-[#0E0E0E]"
+                                    />
+                                    <span className="text-sm text-white">{code}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* 다국어 이름 입력 */}
                     <div className="space-y-3">
                         <label className="text-xs font-bold text-[#AAAAAA]">다국어 이름 설정</label>
                         <input value={names.ko} onChange={e => setNames({...names, ko: e.target.value})} placeholder="한국어 이름" className="bg-[#0E0E0E] text-white px-3 py-2 rounded w-full border border-[#333] text-sm focus:border-white outline-none"/>
                         <input value={names.en} onChange={e => setNames({...names, en: e.target.value})} placeholder="English Name" className="bg-[#0E0E0E] text-white px-3 py-2 rounded w-full border border-[#333] text-sm focus:border-white outline-none"/>
                         <input value={names.ja} onChange={e => setNames({...names, ja: e.target.value})} placeholder="日本語の名前" className="bg-[#0E0E0E] text-white px-3 py-2 rounded w-full border border-[#333] text-sm focus:border-white outline-none"/>
                     </div>
+
+                    {/* 소속사 입력 */}
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-[#AAAAAA]">소속사</label>
+                        <input 
+                            value={agency} 
+                            onChange={e => setAgency(e.target.value)} 
+                            placeholder="소속사 입력" 
+                            className="bg-[#0E0E0E] text-white px-3 py-2 rounded w-full border border-[#333] text-sm focus:border-white outline-none"
+                        />
+                    </div>
+
+                    {/* 태그 입력 */}
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-[#AAAAAA]">태그 (쉼표 구분)</label>
-                        <input value={tags} onChange={e => setTags(e.target.value)} placeholder="K-POP, Boy Group, ..." className="bg-[#0E0E0E] text-white px-3 py-2 rounded w-full border border-[#333] text-sm focus:border-white outline-none"/>
+                        <input 
+                            value={tags} 
+                            onChange={e => setTags(e.target.value)} 
+                            placeholder="K-POP, Boy Group, ..." 
+                            className="bg-[#0E0E0E] text-white px-3 py-2 rounded w-full border border-[#333] text-sm focus:border-white outline-none"
+                        />
                     </div>
+
                     <div className="flex gap-2 pt-2">
                         <button type="button" onClick={() => setStep(1)} className="flex-1 py-3 text-[#AAAAAA] hover:text-white">뒤로</button>
                         <button type="submit" className="flex-1 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700">등록 완료</button>
