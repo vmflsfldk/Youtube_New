@@ -202,6 +202,13 @@ const mockAnalyzeVideo = (duration) => {
   return candidates.filter(c => c.end <= duration);
 };
 
+const buildApiHeaders = (user) => {
+  const headers = { "Content-Type": "application/json" };
+  if (user?.email) headers["X-Demo-Email"] = user.email;
+  if (user?.displayName) headers["X-Demo-Name"] = user.displayName;
+  return headers;
+};
+
 // --- Mock Data ---
 const MOCK_LIVE_ARTISTS = [
   { id: 'bts', name: 'BTS', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=BTS' },
@@ -1233,7 +1240,35 @@ export default function App() {
         };
 
         // Firestore(또는 D1 Mock)에 저장
-        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'artists'), newArtist);
+        const docRef = await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'artists'), newArtist);
+
+        // Cloudflare Worker API에도 즉시 반영
+        try {
+          const apiResponse = await fetch('/api/artists', {
+            method: 'POST',
+            headers: buildApiHeaders(user),
+            body: JSON.stringify({
+              name: primaryName,
+              displayName: names.ko || primaryName,
+              youtubeChannelId: channelId,
+              availableKo: countries.kr,
+              availableEn: countries.en,
+              availableJp: countries.jp,
+              agency: agency || null,
+              tags: tags.split(',').map(t => t.trim()).filter(Boolean)
+            })
+          });
+          if (apiResponse.ok) {
+            const payload = await apiResponse.json();
+            await updateDoc(doc(collection(db, 'artifacts', appId, 'users', user.uid, 'artists'), docRef.id), {
+              d1Id: payload.id
+            });
+          } else {
+            console.warn('API artist sync failed', await apiResponse.text());
+          }
+        } catch (error) {
+          console.error('API artist sync error', error);
+        }
         
         // 폼 초기화 및 이동
         setStep(1);
@@ -1350,7 +1385,41 @@ export default function App() {
          if(res.success) {
              const newVideo = { artistId: selectedArtist.id, ...res.data, createdAt: serverTimestamp() };
              const docRef = await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'videos'), newVideo);
-             setSelectedVideo({ id: docRef.id, ...newVideo }); 
+             let apiVideoId = null;
+             try {
+               const artistIdForApi = Number(selectedArtist?.d1Id ?? selectedArtist?.id);
+               if (Number.isFinite(artistIdForApi)) {
+                 const apiResponse = await fetch('/api/videos', {
+                   method: 'POST',
+                   headers: buildApiHeaders(user),
+                   body: JSON.stringify({
+                     artistId: artistIdForApi,
+                     videoUrl: url,
+                     category: res.data.category?.toLowerCase?.()
+                   })
+                 });
+                 if (apiResponse.ok) {
+                   const payload = await apiResponse.json();
+                   apiVideoId = payload.id;
+                   await updateDoc(doc(collection(db, 'artifacts', appId, 'users', user.uid, 'videos'), docRef.id), {
+                     d1Id: apiVideoId
+                   });
+                 } else {
+                   console.warn('API video sync failed', await apiResponse.text());
+                 }
+               } else {
+                 console.warn('API video sync skipped: missing artist D1 id');
+               }
+             } catch (error) {
+               console.error('API video sync error', error);
+             }
+
+             const selectedVideoRecord = {
+               id: apiVideoId ?? docRef.id,
+               d1Id: apiVideoId ?? null,
+               ...newVideo,
+             };
+             setSelectedVideo(selectedVideoRecord);
              setView('clip_editor');
          } else { alert("URL 오류 또는 이미 등록된 영상입니다."); }
          setIsLoading(false);
@@ -1420,9 +1489,37 @@ export default function App() {
       const isDuplicate = clips.some(c => c.videoId === selectedVideo.id && Math.abs(c.startTime - startTime) < 1 && Math.abs(c.endTime - endTime) < 1);
       if (isDuplicate) return alert("이미 동일한 구간의 클립이 존재합니다.");
       const tagArray = tags.split(',').map(t => t.trim()).filter(t => t);
-      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'clips'), {
+      const docRef = await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'clips'), {
         videoId: selectedVideo.id, youtubeId: selectedVideo.youtubeId, title: clipTitle, startTime, endTime, tags: tagArray, createdAt: serverTimestamp()
       });
+      try {
+        const videoD1Id = Number(selectedVideo?.d1Id ?? selectedVideo?.id);
+        if (Number.isFinite(videoD1Id)) {
+          const apiResponse = await fetch('/api/clips', {
+            method: 'POST',
+            headers: buildApiHeaders(user),
+            body: JSON.stringify({
+              videoId: videoD1Id,
+              title: clipTitle,
+              startSec: startTime,
+              endSec: endTime,
+              tags: tagArray
+            })
+          });
+          if (apiResponse.ok) {
+            const payload = await apiResponse.json();
+            await updateDoc(doc(collection(db, 'artifacts', appId, 'users', user.uid, 'clips'), docRef.id), {
+              d1Id: payload.id
+            });
+          } else {
+            console.warn('API clip sync failed', await apiResponse.text());
+          }
+        } else {
+          console.warn('API clip sync skipped: missing video D1 id');
+        }
+      } catch (error) {
+        console.error('API clip sync error', error);
+      }
       alert("클립이 저장되었습니다."); setView('artist_detail');
     };
 
