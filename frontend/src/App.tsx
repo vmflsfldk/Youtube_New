@@ -204,6 +204,7 @@ const mockAnalyzeVideo = (duration) => {
 
 const buildApiHeaders = (user) => {
   const headers = { "Content-Type": "application/json" };
+  if (user?.token) headers["Authorization"] = `Bearer ${user.token}`;
   // 백엔드 로직과 일치하도록 'X-User-Email'로 변경
   if (user?.email) headers["X-User-Email"] = user.email;
   if (user?.displayName) headers["X-User-Name"] = user.displayName;
@@ -294,6 +295,26 @@ export default function App() {
     return true;
   }, [user]);
 
+  const requestApiToken = async (profile, credential) => {
+    const response = await fetch('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: credential,
+        email: profile.email,
+        displayName: profile.displayName,
+      }),
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || '로그인 토큰 발급에 실패했습니다.');
+    }
+
+    const data = await response.json();
+    return data.token;
+  };
+
   // --- Google Login & Logout Handlers ---
   const handleGoogleLogin = async () => {
     if (!GOOGLE_CLIENT_ID) {
@@ -309,7 +330,7 @@ export default function App() {
     if (!googleInitRef.current) {
       window.google.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
-        callback: ({ credential }) => {
+        callback: async ({ credential }) => {
           if (!credential) return;
 
           try {
@@ -322,13 +343,15 @@ export default function App() {
               )
             );
 
-            setUser({
+            const profile = {
               uid: payload.sub,
               displayName: payload.name || payload.email,
               email: payload.email,
               photoURL: payload.picture,
               isAnonymous: false,
-            });
+            };
+            const apiToken = await requestApiToken(profile, credential);
+            setUser({ ...profile, token: apiToken });
           } catch (error) {
             console.error('Google ID 토큰 파싱 실패', error);
             alert('Google 로그인 중 문제가 발생했습니다. 다시 시도해주세요.');
