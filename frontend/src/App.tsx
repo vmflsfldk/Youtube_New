@@ -1,69 +1,107 @@
 // @ts-nocheck
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { 
-  Play, Pause, SkipBack, SkipForward, Repeat, Shuffle, 
-  Plus, Search, Library, Home, Mic2, User, 
-  MoreVertical, Share2, Heart, Music, Film, Scissors, 
+import {
+  Play, Pause, SkipBack, SkipForward, Repeat, Shuffle,
+  Plus, Search, Library, Home, Mic2, User,
+  MoreVertical, Share2, Heart, Music, Film, Scissors,
   Save, X, Clock, Wand2, Hash, Youtube, ChevronRight,
   ListFilter, BarChart2, Radio, Disc, ListMusic, MoreHorizontal,
-  LayoutList, Grid, ArrowUpDown, Globe, Building2, CheckCircle2, AlertCircle, 
+  LayoutList, Grid, ArrowUpDown, Globe, Building2, CheckCircle2, AlertCircle,
   Maximize2, Minimize2, Signal, FileVideo, Trash2, FolderPlus, PlayCircle, ListPlus,
   LogOut // 로그아웃 아이콘
 } from 'lucide-react';
-import { initializeApp } from "firebase/app";
-import { 
-  getAuth, 
-  signInAnonymously, 
-  onAuthStateChanged,
-  signInWithCustomToken,
-  GoogleAuthProvider, // 구글 로그인 제공자
-  signInWithPopup, // 팝업 로그인 함수
-  signOut // 로그아웃 함수
-} from "firebase/auth";
-import { 
-  getFirestore, 
-  collection, 
-  addDoc, 
-  query, 
-  onSnapshot, 
-  deleteDoc, 
-  doc, 
-  orderBy, 
-  serverTimestamp,
-  updateDoc,
-  where,
-  getDocs,
-  setDoc
-} from "firebase/firestore";
 
-// --- Firebase Configuration & Initialization ---
-const firebaseConfig = (() => {
-  if (typeof __firebase_config !== 'undefined') {
-    try {
-      return JSON.parse(__firebase_config);
-    } catch (error) {
-      console.error('Failed to parse injected firebase config', error);
-    }
-  }
-
-  // Fallback to Vite environment variables for local development
-  const envConfig = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+// --- Lightweight Cloudflare D1-style client (in-memory) ---
+// Firebase를 제거하고, Cloudflare D1 API가 준비되기 전까지 간단한 메모리 저장소로
+// 동일한 인터페이스를 흉내 냅니다. 실제 배포에서는 fetch로 Worker/D1 엔드포인트를
+// 호출하도록 교체하면 됩니다.
+const createD1Client = () => {
+  const tables = new Map();
+  const ensureTable = (name) => {
+    if (!tables.has(name)) tables.set(name, new Map());
+    return tables.get(name);
   };
+  const generateId = () =>
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-  if (envConfig.apiKey && envConfig.authDomain && envConfig.projectId) {
-    return envConfig;
-  }
+  return { tables, ensureTable, generateId };
+};
 
-  console.warn('Firebase config missing. Skipping Firebase initialization.');
-  return null;
-})();
+const d1 = createD1Client();
+const db = d1; // 기존 Firestore 시그니처를 유지하기 위한 alias
 
-const app = firebaseConfig ? initializeApp(firebaseConfig) : null;
-const auth = app ? getAuth(app) : null;
-const db = app ? getFirestore(app) : null;
+const collection = (_db, ...segments) => segments.join('/');
+const doc = (_dbOrPath, ...segments) => segments.join('/');
+const serverTimestamp = () => ({ toDate: () => new Date() });
+const orderBy = (field) => ({ orderBy: field });
+const where = (field, op, value) => ({ where: { field, op, value } });
+const query = (path, ..._rest) => ({ path });
+
+const resolveTable = (path) => {
+  const parts = path.split('/').filter(Boolean);
+  return parts[parts.length - 1];
+};
+
+const onSnapshot = (q, callback) => {
+  const tableName = resolveTable(q.path || q);
+  const table = d1.ensureTable(tableName);
+  const docs = Array.from(table.values()).map((row) => ({
+    id: row.id,
+    data: () => row
+  }));
+  callback({ docs });
+  return () => {};
+};
+
+const getDocs = async (q) => {
+  const tableName = resolveTable(q.path || q);
+  const table = d1.ensureTable(tableName);
+  const docs = Array.from(table.values()).map((row) => ({
+    id: row.id,
+    data: () => row
+  }));
+  return { docs };
+};
+
+const addDoc = async (path, data) => {
+  const tableName = resolveTable(path);
+  const table = d1.ensureTable(tableName);
+  const id = d1.generateId();
+  const record = { ...data, id };
+  table.set(id, record);
+  return { id };
+};
+
+const setDoc = async (docPath, data) => {
+  const parts = docPath.split('/').filter(Boolean);
+  const id = parts.pop();
+  const tableName = parts.pop();
+  const table = d1.ensureTable(tableName);
+  table.set(id, { ...data, id });
+};
+
+const updateDoc = async (docPath, updates) => {
+  const parts = docPath.split('/').filter(Boolean);
+  const id = parts.pop();
+  const tableName = parts.pop();
+  const table = d1.ensureTable(tableName);
+  const existing = table.get(id) || { id };
+  table.set(id, { ...existing, ...updates });
+};
+
+const deleteDoc = async (docPath) => {
+  const parts = docPath.split('/').filter(Boolean);
+  const id = parts.pop();
+  const tableName = parts.pop();
+  const table = d1.ensureTable(tableName);
+  table.delete(id);
+};
+
+// --- Cloudflare D1 (in-memory) bootstrap ---
+// 실제 배포 시에는 Worker 엔드포인트를 호출하지만, 개발 중에는 D1 스키마와 유사한
+// 테이블 구조를 메모리에서 관리합니다.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- Domain Services (Simulating Spring Boot Backend Logic) ---
@@ -203,57 +241,38 @@ export default function App() {
 
   // --- Auth & Data Fetching ---
   useEffect(() => {
-    if (!auth) {
-      console.warn('Firebase auth unavailable; skipping auth initialization.');
-      return;
-    }
-
-    const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      } else {
-        // Wait for auth state to settle
-      }
+    const demoUser = {
+      uid: 'd1-demo-user',
+      displayName: import.meta.env.VITE_DEMO_USER_NAME || 'D1 Demo User',
+      email: import.meta.env.VITE_DEMO_USER_EMAIL || 'demo@d1.local',
+      photoURL: null,
+      isAnonymous: false,
     };
-    initAuth();
-    
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-        if (currentUser) {
-            setUser(currentUser);
-        } else {
-            signInAnonymously(auth).catch(err => console.error("Anonymous auth failed", err));
-        }
-    });
-    return () => unsubscribe();
+    setUser(demoUser);
   }, []);
 
   // --- Google Login & Logout Handlers ---
   const handleGoogleLogin = async () => {
-    if (!auth) {
-      alert('로그인 기능을 사용할 수 없습니다. Firebase 구성이 비어 있습니다.');
-      return;
-    }
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Google login error", error);
-      alert("로그인 중 오류가 발생했습니다: " + error.message);
-    }
+    const email = window.prompt('Cloudflare D1 세션용 이메일을 입력하세요', user?.email || 'demo@d1.local');
+    const displayName = window.prompt('표시 이름을 입력하세요', user?.displayName || 'D1 Demo User');
+    if (!email) return;
+    setUser({
+      uid: `d1-${Date.now()}`,
+      displayName: displayName || '사용자',
+      email,
+      photoURL: null,
+      isAnonymous: false,
+    });
   };
 
   const handleLogout = async () => {
-    if (!auth) return;
-    try {
-      await signOut(auth);
-      // 로그아웃 후에는 onAuthStateChanged가 자동으로 익명 로그인을 다시 수행합니다.
-    } catch (error) {
-      console.error("Logout error", error);
-    }
+    setUser(null);
+    setFavorites(new Set());
+    setSavedPlaylists([]);
   };
 
   useEffect(() => {
-    if (!user || !db) return;
+    if (!user) return;
 
     const qArtists = query(collection(db, 'artifacts', appId, 'users', user.uid, 'artists'), orderBy('createdAt', 'desc'));
     const unsubArtists = onSnapshot(qArtists, (snapshot) => setArtists(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
