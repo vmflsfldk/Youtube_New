@@ -304,14 +304,12 @@ export default function App() {
     return true;
   }, [user]);
 
-  const requestApiToken = async (profile, credential) => {
+  const requestApiToken = async (credential) => {
     const response = await apiFetch('/api/auth/google', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         token: credential,
-        email: profile.email,
-        displayName: profile.displayName,
       }),
     });
 
@@ -321,7 +319,7 @@ export default function App() {
     }
 
     const data = await response.json();
-    return data.token;
+    return data;
   };
 
   // --- Google Login & Logout Handlers ---
@@ -343,26 +341,22 @@ export default function App() {
           if (!credential) return;
 
           try {
-            const payload = JSON.parse(
-              atob(
-                credential
-                  .split('.')[1]
-                  .replace(/-/g, '+')
-                  .replace(/_/g, '/')
-              )
-            );
+            const { token: apiToken, user: apiUser } = await requestApiToken(credential);
+
+            if (!apiUser?.email) {
+              throw new Error('사용자 정보가 올바르지 않습니다.');
+            }
 
             const profile = {
-              uid: payload.sub,
-              displayName: payload.name || payload.email,
-              email: payload.email,
-              photoURL: payload.picture,
+              uid: String(apiUser.id ?? apiUser.email),
+              displayName: apiUser.displayName || apiUser.email,
+              email: apiUser.email,
+              photoURL: '',
               isAnonymous: false,
             };
-            const apiToken = await requestApiToken(profile, credential);
             setUser({ ...profile, token: apiToken });
           } catch (error) {
-            console.error('Google ID 토큰 파싱 실패', error);
+            console.error('Google 로그인 처리 실패', error);
             alert('Google 로그인 중 문제가 발생했습니다. 다시 시도해주세요.');
           }
         },
