@@ -384,28 +384,26 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!user) return;
+    fetch('/api/artists')
+      .then((res) => res.json())
+      .then((data) => {
+        const mappedArtists = data.map((artist) => ({
+          ...artist,
+          imageUrl: artist.profileImageUrl,
+          primaryName: artist.displayName
+        }));
+        setArtists(mappedArtists);
+      })
+      .catch((err) => console.error("아티스트 로딩 실패:", err));
 
-    const qArtists = query(collection(db, 'artifacts', appId, 'users', user.uid, 'artists'), orderBy('createdAt', 'desc'));
-    const unsubArtists = onSnapshot(qArtists, (snapshot) => setArtists(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
+    setVideos([]);
+    setClips([]);
 
-    const qVideos = query(collection(db, 'artifacts', appId, 'users', user.uid, 'videos'), orderBy('createdAt', 'desc'));
-    const unsubVideos = onSnapshot(qVideos, (snapshot) => setVideos(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
+    setSavedPlaylists([]);
 
-    const qClips = query(collection(db, 'artifacts', appId, 'users', user.uid, 'clips'), orderBy('createdAt', 'desc'));
-    const unsubClips = onSnapshot(qClips, (snapshot) => setClips(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
+    setFavorites(new Set());
 
-    const qPlaylists = query(collection(db, 'artifacts', appId, 'users', user.uid, 'playlists'), orderBy('createdAt', 'desc'));
-    const unsubPlaylists = onSnapshot(qPlaylists, (snapshot) => setSavedPlaylists(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
-
-    const qFavs = query(collection(db, 'artifacts', appId, 'users', user.uid, 'favorite_artists'));
-    const unsubFavs = onSnapshot(qFavs, (snapshot) => {
-      const favSet = new Set(snapshot.docs.map(d => d.data().artistId));
-      setFavorites(favSet);
-    });
-
-    return () => { unsubArtists(); unsubVideos(); unsubClips(); unsubPlaylists(); unsubFavs(); };
-  }, [user]);
+  }, []);
 
   // --- YouTube IFrame API Loader ---
   useEffect(() => {
