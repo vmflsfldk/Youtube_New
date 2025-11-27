@@ -2280,23 +2280,7 @@ export default function App() {
 
     return (
       <div className="fixed left-0 right-0 z-50 bg-[#212121] border-t border-[#333] md:bottom-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] h-[64px] md:h-[72px] flex items-center px-4 shadow-lg transition-all duration-200 group">
-        
-        {/* 숨겨진 플레이어 (모바일 호환성 유지: 1px 크기 및 화면 밖 배치) */}
-        <div 
-            className={`fixed z-40 transition-all duration-300 shadow-2xl rounded-lg overflow-hidden border border-[#333] bg-black 
-            ${isVideoVisible 
-                ? 'bottom-32 right-4 w-80 aspect-video opacity-100 translate-y-0 pointer-events-auto' 
-                : '-bottom-10 -right-10 w-px h-px opacity-0 pointer-events-none' 
-            }`}
-        >
-            <div id="global-player" className="w-full h-full"></div>
-            {isVideoVisible && (
-                <button onClick={() => setIsVideoVisible(false)} className="absolute top-2 right-2 bg-black/60 p-1 rounded-full text-white hover:bg-black/80">
-                    <X size={14}/>
-                </button>
-            )}
-        </div>
-        
+
         {/* 인터랙티브 재생바 */}
         <div className="absolute top-[-6px] left-0 right-0 h-[12px] flex items-center cursor-pointer">
            <div className="absolute w-full h-[2px] bg-[#333] group-hover:h-[4px] transition-all"></div>
@@ -2418,6 +2402,23 @@ export default function App() {
         </div>
       </main>
       <RightSidebar />
+
+      <div
+          className={`fixed z-40 transition-all duration-300 shadow-2xl rounded-lg overflow-hidden border border-[#333] bg-black
+          ${isVideoVisible
+              ? 'bottom-32 right-4 w-80 aspect-video opacity-100 translate-y-0 pointer-events-auto'
+              : '-bottom-10 -right-10 w-px h-px opacity-0 pointer-events-none'
+          }`}
+      >
+          <div id="global-player" className="w-full h-full"></div>
+
+          {isVideoVisible && (
+              <button onClick={() => setIsVideoVisible(false)} className="absolute top-2 right-2 bg-black/60 p-1 rounded-full text-white hover:bg-black/80">
+                  <X size={14}/>
+              </button>
+          )}
+      </div>
+
       <BottomPlayer />
       <MobileNav />
     </div>
