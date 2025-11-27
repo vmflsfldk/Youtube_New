@@ -551,45 +551,87 @@ export default function App() {
     };
   }, []);
 
-  // --- Global YouTube Player Initialization ---
+  // --- Global YouTube Player Initialization (디버깅 로그 추가) ---
   useEffect(() => {
-    if (!currentClip || !isYouTubeReady || !window.YT) return;
-
-    if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
-        playerRef.current.loadVideoById({
-            videoId: currentClip.youtubeId,
-            startSeconds: currentClip.startTime,
-            endSeconds: currentClip.endTime
-        });
+    // 1. 기본 조건 체크
+    if (!currentClip) {
+        console.log("[GlobalPlayer] currentClip이 없습니다. 플레이어 생성을 스킵합니다.");
+        return;
+    }
+    if (!window.YT) {
+        console.warn("[GlobalPlayer] window.YT가 아직 로드되지 않았습니다. YouTube IFrame API 대기 중...");
         return;
     }
 
-    playerRef.current = new window.YT.Player('global-player', {
-        height: '100%',
-        width: '100%',
-        videoId: currentClip.youtubeId,
-        playerVars: {
-            autoplay: 1,
-            controls: 0,
-            start: currentClip.startTime,
-            end: currentClip.endTime,
-            origin: window.location.origin
-        },
-        events: {
-            onReady: (event) => {
-                event.target.playVideo();
-                setIsPlaying(true);
+    console.log("[GlobalPlayer] 초기화 시작. Video ID:", currentClip.youtubeId);
+
+    // 2. 이미 플레이어가 있는 경우: 영상 로드만 수행
+    if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
+        console.log("[GlobalPlayer] 기존 플레이어 재사용. loadVideoById 호출");
+        try {
+            playerRef.current.loadVideoById({
+                videoId: currentClip.youtubeId,
+                startSeconds: currentClip.startTime,
+                endSeconds: currentClip.endTime
+            });
+        } catch (e) {
+            console.error("[GlobalPlayer] loadVideoById 실패:", e);
+        }
+        return;
+    }
+
+    // 3. 플레이어 DOM 요소 확인
+    const playerContainer = document.getElementById('global-player');
+    if (!playerContainer) {
+        console.error("[GlobalPlayer] #global-player 엘리먼트를 찾을 수 없습니다!");
+        return;
+    }
+
+    // 4. 플레이어 새로 생성
+    try {
+        playerRef.current = new window.YT.Player('global-player', {
+            height: '100%',
+            width: '100%',
+            videoId: currentClip.youtubeId,
+            playerVars: {
+                autoplay: 1,
+                controls: 0,
+                start: currentClip.startTime,
+                end: currentClip.endTime,
+                origin: window.location.origin,
+                playsinline: 1, // iOS 모바일 재생 필수 설정
+                enablejsapi: 1  // API 제어 허용
             },
-            onStateChange: (event) => {
-                if (event.data === window.YT.PlayerState.PLAYING) setIsPlaying(true);
-                if (event.data === window.YT.PlayerState.PAUSED) setIsPlaying(false);
-                if (event.data === window.YT.PlayerState.ENDED) {
-                    playNext();
+            events: {
+                onReady: (event) => {
+                    console.log("[GlobalPlayer] onReady 이벤트 발생! 플레이어 준비됨.");
+                    event.target.playVideo();
+                    setIsPlaying(true);
+                },
+                onStateChange: (event) => {
+                    console.log("[GlobalPlayer] 상태 변경됨:", event.data);
+                    // -1:시작안함, 0:종료, 1:재생중, 2:일시정지, 3:버퍼링, 5:동영상신호
+                    if (event.data === window.YT.PlayerState.PLAYING) setIsPlaying(true);
+                    if (event.data === window.YT.PlayerState.PAUSED) setIsPlaying(false);
+                    if (event.data === window.YT.PlayerState.ENDED) {
+                        console.log("[GlobalPlayer] 영상 종료. 다음 곡 재생 시도.");
+                        if (isLooping) {
+                            event.target.seekTo(currentClip.startTime);
+                            event.target.playVideo();
+                        } else {
+                            playNext();
+                        }
+                    }
+                },
+                onError: (e) => {
+                    console.error("[GlobalPlayer] 유튜브 플레이어 에러 발생:", e.data);
                 }
             }
-        }
-    });
-  }, [currentClip, playNext, isYouTubeReady]);
+        });
+    } catch (err) {
+        console.error("[GlobalPlayer] 플레이어 생성 중 예외 발생:", err);
+    }
+  }, [currentClip, isLooping, playNext]);
 
   // --- Player Logic ---
   const loadClipToPlayer = (clip) => {
@@ -2183,66 +2225,69 @@ export default function App() {
 
   const BottomPlayer = () => {
     const displayClip = currentClip || { title: "재생 중인 곡 없음", artistName: "Artist", startTime: 0, endTime: 0 };
-    // 전체 구간 길이 (endTime이 없으면 기본 100초로 설정하여 0 나누기 방지)
     const duration = (displayClip.endTime - displayClip.startTime) || 1;
-    // 현재 재생 시점 (전체 영상 시간 - 클립 시작 시간)
     const currentProgress = Math.max(0, playerProgress - displayClip.startTime);
-    // 진행률 (%)
     const progressPercent = Math.min(100, Math.max(0, (currentProgress / duration) * 100));
 
-    // [추가] 사용자가 재생바를 조작했을 때 실행 (Seek 기능)
-    const handleSeek = (e) => {
-        const newTime = parseFloat(e.target.value);
-        // 1. UI 상태 즉시 업데이트 (반응성 향상)
-        setPlayerProgress(displayClip.startTime + newTime);
-        
-        // 2. 유튜브 플레이어 이동
-        if (playerRef.current && typeof playerRef.current.seekTo === 'function') {
-            playerRef.current.seekTo(displayClip.startTime + newTime, true);
-        }
-    };
+    // [디버깅] 재생 버튼 클릭 핸들러
+    const togglePlay = useCallback((e) => {
+      e?.stopPropagation(); // 상위 클릭 이벤트 전파 방지
+      console.log("[BottomPlayer] 재생 버튼 클릭됨");
 
-    const togglePlay = useCallback(() => {
+      // 1. 현재 곡이 없는 경우
       if (!currentClip) {
+          console.log("[BottomPlayer] 현재 곡 없음. 대기열 확인:", playlist.length);
           if (playlist.length > 0) {
-              const firstClip = playlist[0];
-
-              if (!firstClip?.youtubeId) {
-                  alert("대기열의 첫 곡에 유효한 YouTube ID가 없어 재생할 수 없습니다.");
-                  return;
-              }
-
-              loadClipToPlayer({
-                  ...firstClip,
-                  startTime: firstClip.startTime ?? 0,
-                  endTime: firstClip.endTime ?? firstClip.duration ?? 0
-              });
+              setCurrentClip(playlist[0]);
+              setIsPlaying(true);
           } else {
               alert("재생할 곡이 없습니다. 영상을 대기열에 추가해주세요.");
           }
           return;
       }
 
-      if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
-          try {
-              const playerState = playerRef.current.getPlayerState();
-              if (playerState === 1 || playerState === 3) {
-                  playerRef.current.pauseVideo();
-                  setIsPlaying(false);
-              } else {
-                  playerRef.current.playVideo();
-                  setIsPlaying(true);
-              }
-          } catch (e) {
-              console.error("Player API Error:", e);
-          }
+      // 2. 플레이어 객체 확인
+      if (!playerRef.current) {
+          console.error("[BottomPlayer] playerRef.current가 없음 (플레이어 미초기화)");
+          return;
       }
-    }, [currentClip, loadClipToPlayer, playlist]);
+
+      if (typeof playerRef.current.getPlayerState !== 'function') {
+          console.error("[BottomPlayer] getPlayerState 함수가 없음. 플레이어가 아직 로딩 중이거나 깨짐.");
+          return;
+      }
+
+      // 3. 실제 재생 명령
+      try {
+          const playerState = playerRef.current.getPlayerState();
+          console.log("[BottomPlayer] 현재 플레이어 상태(API):", playerState);
+          
+          if (playerState === 1 || playerState === 3) { // 재생중(1) or 버퍼링(3)
+              console.log("[BottomPlayer] 일시정지 명령 전송 (pauseVideo)");
+              playerRef.current.pauseVideo();
+              setIsPlaying(false);
+          } else {
+              console.log("[BottomPlayer] 재생 명령 전송 (playVideo)");
+              playerRef.current.playVideo();
+              setIsPlaying(true);
+          }
+      } catch (e) {
+          console.error("[BottomPlayer] API 호출 중 에러:", e);
+      }
+    }, [currentClip, playlist]);
+
+    const handleSeek = (e) => {
+        const newTime = parseFloat(e.target.value);
+        setPlayerProgress(displayClip.startTime + newTime);
+        if (playerRef.current && typeof playerRef.current.seekTo === 'function') {
+            playerRef.current.seekTo(displayClip.startTime + newTime, true);
+        }
+    };
 
     return (
       <div className="fixed left-0 right-0 z-50 bg-[#212121] border-t border-[#333] md:bottom-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] h-[64px] md:h-[72px] flex items-center px-4 shadow-lg transition-all duration-200 group">
         
-        {/* 숨겨진 플레이어 (모바일 호환성 유지) */}
+        {/* 숨겨진 플레이어 (모바일 호환성 유지: 1px 크기 및 화면 밖 배치) */}
         <div 
             className={`fixed z-40 transition-all duration-300 shadow-2xl rounded-lg overflow-hidden border border-[#333] bg-black 
             ${isVideoVisible 
@@ -2258,62 +2303,34 @@ export default function App() {
             )}
         </div>
         
-        {/* 🔴 [핵심 수정] 인터랙티브 재생바 (Range Input) */}
+        {/* 인터랙티브 재생바 */}
         <div className="absolute top-[-6px] left-0 right-0 h-[12px] flex items-center cursor-pointer">
-           {/* 배경 트랙 (회색) */}
            <div className="absolute w-full h-[2px] bg-[#333] group-hover:h-[4px] transition-all"></div>
-           
-           {/* 진행 표시줄 (빨간색) */}
-           <div 
-             className="absolute h-[2px] bg-red-600 group-hover:h-[4px] transition-all" 
-             style={{ width: `${progressPercent}%` }}
-           ></div>
-
-           {/* 실제 조작용 투명 슬라이더 (Input Range) */}
-           <input
-             type="range"
-             min={0}
-             max={duration}
-             step="0.1"
-             value={currentProgress}
-             onChange={handleSeek}
-             className="absolute w-full h-full opacity-0 cursor-pointer z-10"
-           />
-
-           {/* 핸들 (Hover 시에만 표시) */}
-           <div 
-             className="absolute w-3 h-3 bg-red-600 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
-             style={{ left: `${progressPercent}%`, transform: 'translateX(-50%)' }}
-           ></div>
+           <div className="absolute h-[2px] bg-red-600 group-hover:h-[4px] transition-all" style={{ width: `${progressPercent}%` }}></div>
+           <input type="range" min={0} max={duration} step="0.1" value={currentProgress} onChange={handleSeek} className="absolute w-full h-full opacity-0 cursor-pointer z-10"/>
+           <div className="absolute w-3 h-3 bg-red-600 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" style={{ left: `${progressPercent}%`, transform: 'translateX(-50%)' }}></div>
         </div>
 
-        {/* 재생 컨트롤 (기존 유지) */}
+        {/* 재생 컨트롤 */}
         <div className="flex items-center gap-3 md:gap-4 text-white mr-4">
-           <button onClick={playPrev} className="p-2 active:scale-90 transition-transform text-[#AAA] hover:text-white">
-             <SkipBack size={20} fill="currentColor"/>
-           </button>
+           <button onClick={playPrev} className="p-2 active:scale-90 transition-transform text-[#AAA] hover:text-white"><SkipBack size={20} fill="currentColor"/></button>
            
            <button onClick={togglePlay} className="p-2 -m-2 active:scale-90 transition-transform">
               {isPlaying ? <Pause size={28} fill="currentColor"/> : <Play size={28} fill="currentColor"/>}
            </button>
            
-           <button onClick={playNext} className="p-2 active:scale-90 transition-transform text-[#AAA] hover:text-white">
-             <SkipForward size={20} fill="currentColor"/>
-           </button>
+           <button onClick={playNext} className="p-2 active:scale-90 transition-transform text-[#AAA] hover:text-white"><SkipForward size={20} fill="currentColor"/></button>
            
-           {/* 시간 표시 (PC 전용) */}
            <div className="text-xs text-[#AAAAAA] ml-2 font-mono hidden md:block w-20">
               {formatTime(currentProgress)} / {formatTime(duration)}
            </div>
         </div>
 
-        {/* 곡 정보 */}
         <div className="flex-1 min-w-0 mr-4 cursor-pointer active:opacity-70" onClick={() => setIsVideoVisible(true)}>
             <div className="text-white text-sm font-medium truncate">{displayClip.title}</div>
             <div className="text-[#AAAAAA] text-xs truncate">{displayClip.artistName}</div>
         </div>
 
-        {/* 추가 컨트롤 */}
         <div className="flex items-center gap-4 text-[#AAAAAA]">
              <button className={`hover:text-white ${isLooping ? 'text-red-500' : ''}`} onClick={() => setIsLooping(!isLooping)}><Repeat size={20}/></button>
              <button className="hover:text-white hidden md:block"><ListMusic size={20}/></button>
