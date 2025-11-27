@@ -2154,15 +2154,27 @@ export default function App() {
   };
 
   const BottomPlayer = () => {
-    // 현재 재생 중인 곡 정보 (없으면 기본값)
     const displayClip = currentClip || { title: "재생 중인 곡 없음", artistName: "Artist", startTime: 0, endTime: 0 };
-    const duration = displayClip.endTime - displayClip.startTime;
+    // 전체 구간 길이 (endTime이 없으면 기본 100초로 설정하여 0 나누기 방지)
+    const duration = (displayClip.endTime - displayClip.startTime) || 1;
+    // 현재 재생 시점 (전체 영상 시간 - 클립 시작 시간)
     const currentProgress = Math.max(0, playerProgress - displayClip.startTime);
-    const progressPercent = duration > 0 ? (currentProgress / duration) * 100 : 0;
+    // 진행률 (%)
+    const progressPercent = Math.min(100, Math.max(0, (currentProgress / duration) * 100));
 
-    // 재생/일시정지 토글 (안전 장치 추가)
+    // [추가] 사용자가 재생바를 조작했을 때 실행 (Seek 기능)
+    const handleSeek = (e) => {
+        const newTime = parseFloat(e.target.value);
+        // 1. UI 상태 즉시 업데이트 (반응성 향상)
+        setPlayerProgress(displayClip.startTime + newTime);
+        
+        // 2. 유튜브 플레이어 이동
+        if (playerRef.current && typeof playerRef.current.seekTo === 'function') {
+            playerRef.current.seekTo(displayClip.startTime + newTime, true);
+        }
+    };
+
     const togglePlay = useCallback(() => {
-      // 1. 현재 곡이 없으면 재생목록의 첫 곡 재생 시도
       if (!currentClip) {
           if (playlist.length > 0) {
               setCurrentClip(playlist[0]);
@@ -2173,12 +2185,9 @@ export default function App() {
           return;
       }
 
-      // 2. 플레이어 객체 확인 후 명령 전달
       if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
-          // DOM 연결 상태 확인 (에러 방지용 try-catch)
           try {
               const playerState = playerRef.current.getPlayerState();
-              // playing(1) or buffering(3) 상태면 일시정지
               if (playerState === 1 || playerState === 3) {
                   playerRef.current.pauseVideo();
                   setIsPlaying(false);
@@ -2188,29 +2197,22 @@ export default function App() {
               }
           } catch (e) {
               console.error("Player API Error:", e);
-              // 에러 발생 시 플레이어 재로딩 시도 (선택 사항)
           }
       }
     }, [currentClip, playlist]);
 
     return (
-      <div className="fixed left-0 right-0 z-50 bg-[#212121] border-t border-[#333] md:bottom-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] h-[64px] md:h-[72px] flex items-center px-4 shadow-lg transition-all duration-200">
+      <div className="fixed left-0 right-0 z-50 bg-[#212121] border-t border-[#333] md:bottom-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] h-[64px] md:h-[72px] flex items-center px-4 shadow-lg transition-all duration-200 group">
         
-        {/* 🔴 [핵심 수정] 모바일 대응 숨겨진 플레이어 
-           - 1. w-0 h-0 대신 w-px h-px (1픽셀) 사용 -> 브라우저가 '화면에 있다'고 인식함
-           - 2. pointer-events-none으로 터치 방지
-           - 3. 화면 밖(-bottom-10)에 배치하여 시각적으로 숨김
-        */}
+        {/* 숨겨진 플레이어 (모바일 호환성 유지) */}
         <div 
             className={`fixed z-40 transition-all duration-300 shadow-2xl rounded-lg overflow-hidden border border-[#333] bg-black 
             ${isVideoVisible 
-                ? 'bottom-32 right-4 w-80 aspect-video opacity-100 translate-y-0 pointer-events-auto' // 보이는 상태
-                : '-bottom-10 -right-10 w-px h-px opacity-0 pointer-events-none' // 숨김 상태 (크기 유지!)
+                ? 'bottom-32 right-4 w-80 aspect-video opacity-100 translate-y-0 pointer-events-auto' 
+                : '-bottom-10 -right-10 w-px h-px opacity-0 pointer-events-none' 
             }`}
         >
             <div id="global-player" className="w-full h-full"></div>
-            
-            {/* 닫기 버튼 (비디오 모드일 때만 표시) */}
             {isVideoVisible && (
                 <button onClick={() => setIsVideoVisible(false)} className="absolute top-2 right-2 bg-black/60 p-1 rounded-full text-white hover:bg-black/80">
                     <X size={14}/>
@@ -2218,38 +2220,56 @@ export default function App() {
             )}
         </div>
         
-        {/* 진행 바 */}
-        <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#333] group cursor-pointer">
-           <div className="h-full bg-red-600 absolute top-0 left-0" style={{ width: `${Math.min(100, progressPercent)}%` }}></div>
-           {/* 터치 영역 확보를 위한 투명 바 */}
-           <div className="absolute top-[-6px] h-[14px] w-full opacity-0"></div>
+        {/* 🔴 [핵심 수정] 인터랙티브 재생바 (Range Input) */}
+        <div className="absolute top-[-6px] left-0 right-0 h-[12px] flex items-center cursor-pointer">
+           {/* 배경 트랙 (회색) */}
+           <div className="absolute w-full h-[2px] bg-[#333] group-hover:h-[4px] transition-all"></div>
+           
+           {/* 진행 표시줄 (빨간색) */}
+           <div 
+             className="absolute h-[2px] bg-red-600 group-hover:h-[4px] transition-all" 
+             style={{ width: `${progressPercent}%` }}
+           ></div>
+
+           {/* 실제 조작용 투명 슬라이더 (Input Range) */}
+           <input
+             type="range"
+             min={0}
+             max={duration}
+             step="0.1"
+             value={currentProgress}
+             onChange={handleSeek}
+             className="absolute w-full h-full opacity-0 cursor-pointer z-10"
+           />
+
+           {/* 핸들 (Hover 시에만 표시) */}
+           <div 
+             className="absolute w-3 h-3 bg-red-600 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+             style={{ left: `${progressPercent}%`, transform: 'translateX(-50%)' }}
+           ></div>
         </div>
 
-        {/* 재생 컨트롤 */}
+        {/* 재생 컨트롤 (기존 유지) */}
         <div className="flex items-center gap-3 md:gap-4 text-white mr-4">
-           <button 
-             onClick={playPrev} 
-             className="p-2 active:scale-90 transition-transform text-[#AAA] hover:text-white"
-           >
+           <button onClick={playPrev} className="p-2 active:scale-90 transition-transform text-[#AAA] hover:text-white">
              <SkipBack size={20} fill="currentColor"/>
            </button>
            
-           <button 
-             onClick={togglePlay} 
-             className="p-2 -m-2 active:scale-90 transition-transform" // 터치 영역 확대
-           >
+           <button onClick={togglePlay} className="p-2 -m-2 active:scale-90 transition-transform">
               {isPlaying ? <Pause size={28} fill="currentColor"/> : <Play size={28} fill="currentColor"/>}
            </button>
            
-           <button 
-             onClick={playNext} 
-             className="p-2 active:scale-90 transition-transform text-[#AAA] hover:text-white"
-           >
+           <button onClick={playNext} className="p-2 active:scale-90 transition-transform text-[#AAA] hover:text-white">
              <SkipForward size={20} fill="currentColor"/>
            </button>
+           
+           {/* 시간 표시 (PC 전용) */}
+           <div className="text-xs text-[#AAAAAA] ml-2 font-mono hidden md:block w-20">
+              {formatTime(currentProgress)} / {formatTime(duration)}
+           </div>
         </div>
 
-        {/* 곡 정보 (클릭 시 비디오 모드 전환) */}
+        {/* 곡 정보 */}
         <div className="flex-1 min-w-0 mr-4 cursor-pointer active:opacity-70" onClick={() => setIsVideoVisible(true)}>
             <div className="text-white text-sm font-medium truncate">{displayClip.title}</div>
             <div className="text-[#AAAAAA] text-xs truncate">{displayClip.artistName}</div>
