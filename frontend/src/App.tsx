@@ -1198,7 +1198,7 @@ export default function App() {
   };
 
   const ArtistListView = () => {
-    const [groupMode, setGroupMode] = useState('all'); 
+    const [groupMode, setGroupMode] = useState('all');
     const [searchTerm, setSearchTerm] = useState("");
 
     const groupedData = useMemo(() => {
@@ -1267,6 +1267,140 @@ export default function App() {
                 {artists.length === 0 && <div className="text-center py-20 text-[#555]">등록된 아티스트가 없습니다.</div>}
             </div>
         </div>
+    );
+  };
+
+  const ArtistDetailView = () => {
+    if (!selectedArtist) return <div className="p-10 text-center text-[#555]">아티스트 정보가 없습니다.</div>;
+
+    const artistVideos = useMemo(() => videos.filter(v => v.artistId === selectedArtist.id), [videos, selectedArtist]);
+    const artistClips = useMemo(() => {
+        const artistVideoIds = new Set(artistVideos.map(v => v.id));
+        return clips.filter(c => artistVideoIds.has(c.videoId));
+    }, [clips, artistVideos]);
+
+    return (
+      <div className="p-8 pb-32 min-h-full bg-[#030303] text-white animate-in fade-in duration-300">
+         {/* 아티스트 헤더 */}
+         <div className="flex flex-col md:flex-row items-center md:items-end gap-8 mb-12">
+            <img 
+              src={selectedArtist.imageUrl} 
+              alt={selectedArtist.name} 
+              className="w-48 h-48 rounded-full object-cover shadow-2xl border-4 border-[#222]"
+            />
+            <div className="text-center md:text-left flex-1">
+               <h1 className="text-5xl font-black mb-2 tracking-tight">{selectedArtist.primaryName || selectedArtist.name}</h1>
+               <div className="text-[#AAAAAA] text-lg mb-4 flex items-center justify-center md:justify-start gap-2">
+                  <span>{selectedArtist.agency || "소속사 정보 없음"}</span>
+                  <span>•</span>
+                  <span>구독자 {selectedArtist.subscriberCount || "비공개"}</span>
+               </div>
+               <div className="flex flex-wrap gap-2 justify-center md:justify-start mb-6">
+                  {selectedArtist.tags?.map((tag: string, i: number) => (
+                     <span key={i} className="px-3 py-1 bg-[#222] rounded-full text-xs text-[#CCC] border border-[#333]">#{tag}</span>
+                  ))}
+               </div>
+               <div className="flex gap-3 justify-center md:justify-start">
+                  <button className="bg-red-600 hover:bg-red-700 text-white px-8 py-3 rounded-full font-bold flex items-center gap-2 transition-all">
+                     <Play fill="currentColor" size={18}/> 셔플 재생
+                  </button>
+                  <button 
+                    onClick={(e) => toggleFavorite(e, selectedArtist)}
+                    className={`px-8 py-3 rounded-full font-bold flex items-center gap-2 transition-all border ${favorites.has(selectedArtist.id) ? 'bg-white text-black border-white' : 'bg-black text-white border-[#333] hover:border-white'}`}
+                  >
+                     <Heart size={18} fill={favorites.has(selectedArtist.id) ? "currentColor" : "none"}/> {favorites.has(selectedArtist.id) ? "팔로잉" : "팔로우"}
+                  </button>
+               </div>
+            </div>
+         </div>
+
+         {/* 등록된 영상 섹션 */}
+         <section className="mb-12">
+            <div className="flex justify-between items-end mb-6 border-b border-[#282828] pb-4">
+               <h2 className="text-2xl font-bold flex items-center gap-2">
+                  <FileVideo className="text-red-600"/> 등록된 영상 <span className="text-[#666] text-sm font-normal">({artistVideos.length})</span>
+               </h2>
+               <button onClick={() => setView('add_video')} className="text-sm font-bold text-[#AAAAAA] hover:text-white flex items-center gap-1 transition-colors">
+                  <Plus size={16}/> 영상 추가
+               </button>
+            </div>
+            
+            {artistVideos.length > 0 ? (
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {artistVideos.map(video => (
+                     <div key={video.id} className="group cursor-pointer" onClick={() => playFullVideo(video)}>
+                        <div className="relative aspect-video rounded-lg overflow-hidden mb-3 bg-[#111] border border-[#222] group-hover:border-[#444] transition-all">
+                           <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"/>
+                           <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-1.5 py-0.5 rounded font-mono">
+                              {formatTime(video.duration)}
+                           </div>
+                           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-2 bg-black/40 backdrop-blur-[2px]">
+                              <button 
+                                onClick={(e) => addToQueue(e, video, true)}
+                                className="p-2 bg-white text-black rounded-full hover:scale-110 transition-transform" title="대기열 추가"
+                              >
+                                 <ListPlus size={20}/>
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); setSelectedVideo(video); setView('clip_editor'); }}
+                                className="p-2 bg-[#333] text-white rounded-full hover:scale-110 transition-transform" title="클립 만들기"
+                              >
+                                 <Scissors size={20}/>
+                              </button>
+                           </div>
+                        </div>
+                        <h3 className="font-bold text-white text-sm truncate pr-2 group-hover:text-red-500 transition-colors">{video.title}</h3>
+                        <p className="text-xs text-[#666] mt-0.5">{video.createdAt?.toDate ? new Date(video.createdAt.toDate()).toLocaleDateString() : 'Unknown Date'}</p>
+                     </div>
+                  ))}
+               </div>
+            ) : (
+               <div className="py-10 text-center text-[#444] bg-[#111] rounded-xl border border-dashed border-[#222]">
+                  <p className="mb-2">등록된 영상이 없습니다.</p>
+                  <button onClick={() => setView('add_video')} className="text-red-500 hover:underline text-sm">첫 영상을 등록해보세요</button>
+               </div>
+            )}
+         </section>
+
+         {/* 클립 섹션 */}
+         <section>
+            <div className="flex justify-between items-end mb-6 border-b border-[#282828] pb-4">
+               <h2 className="text-2xl font-bold flex items-center gap-2">
+                  <Scissors className="text-red-600"/> 하이라이트 클립 <span className="text-[#666] text-sm font-normal">({artistClips.length})</span>
+               </h2>
+            </div>
+            {artistClips.length > 0 ? (
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {artistClips.map(clip => {
+                     const parentVideo = videos.find(v => v.id === clip.videoId);
+                     return (
+                        <div key={clip.id} onClick={() => loadClipToPlayer({...clip, youtubeId: parentVideo?.youtubeId, artistName: selectedArtist.primaryName})} className="flex gap-4 p-3 rounded-lg bg-[#181818] hover:bg-[#222] group cursor-pointer transition-colors border border-transparent hover:border-[#333]">
+                           <div className="relative w-24 h-16 flex-shrink-0 rounded overflow-hidden bg-black">
+                              <img src={parentVideo?.thumbnailUrl} className="w-full h-full object-cover opacity-70 group-hover:opacity-100"/>
+                              <div className="absolute inset-0 flex items-center justify-center"><Play size={20} fill="white" className="opacity-80"/></div>
+                           </div>
+                           <div className="flex-1 min-w-0 flex flex-col justify-center">
+                              <h4 className="text-white font-bold text-sm truncate mb-1 group-hover:text-red-400 transition-colors">{clip.title}</h4>
+                              <div className="flex items-center gap-2 text-xs text-[#666]">
+                                 <Clock size={10}/> <span>{formatTime(clip.endTime - clip.startTime)}</span>
+                                 {clip.tags?.[0] && <span className="bg-[#333] px-1 rounded text-[10px] text-[#999]">#{clip.tags[0]}</span>}
+                              </div>
+                           </div>
+                           <button 
+                              onClick={(e) => addToQueue(e, clip, false)}
+                              className="self-center p-2 text-[#444] hover:text-white opacity-0 group-hover:opacity-100 transition-all"
+                           >
+                              <ListPlus size={16}/>
+                           </button>
+                        </div>
+                     );
+                  })}
+               </div>
+            ) : (
+               <div className="py-8 text-center text-[#444]">생성된 클립이 없습니다.</div>
+            )}
+         </section>
+      </div>
     );
   };
 
