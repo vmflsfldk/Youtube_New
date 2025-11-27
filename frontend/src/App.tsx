@@ -2135,82 +2135,86 @@ export default function App() {
     const currentProgress = Math.max(0, playerProgress - displayClip.startTime);
     const progressPercent = duration > 0 ? (currentProgress / duration) * 100 : 0;
 
+    // 재생/일시정지 토글 핸들러
+    const handlePlayPause = (e) => {
+        e.stopPropagation(); // 클릭 이벤트 전파 방지 (부모 요소 클릭 방지)
+        
+        // 1. 현재 곡이 없으면 재생목록의 첫 곡 재생 시도
+        if (!currentClip) {
+            if (playlist.length > 0) {
+                setCurrentClip(playlist[0]);
+                setIsPlaying(true);
+            } else {
+                alert("재생할 곡이 없습니다.");
+            }
+            return;
+        }
+
+        // 2. 플레이어가 준비된 상태면 재생/일시정지 토글
+        if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
+            if (isPlaying) {
+                playerRef.current.pauseVideo();
+            } else {
+                playerRef.current.playVideo();
+            }
+            setIsPlaying(!isPlaying);
+        } else {
+            console.warn("YouTube Player is waiting...");
+        }
+    };
+
     return (
       <div className="fixed left-0 right-0 z-50 bg-[#212121] border-t border-[#333] md:bottom-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] h-[64px] md:h-[72px] flex items-center px-4 shadow-lg transition-all duration-200">
-        {/* Hidden/Floating Global Player */}
-        {/* 중요: visibility: hidden으로 숨겨두되 DOM에는 존재해야 API가 작동함 */}
-        <div className={`fixed bottom-24 right-4 z-40 transition-all duration-300 shadow-2xl rounded-lg overflow-hidden border border-[#333] ${isVideoVisible ? 'w-80 aspect-video opacity-100 translate-y-0' : 'w-0 h-0 opacity-0 translate-y-10 pointer-events-none'}`}>
-            <div id="global-player" className="w-full h-full"></div>
-            <button onClick={() => setIsVideoVisible(false)} className="absolute top-2 right-2 bg-black/60 p-1 rounded-full text-white hover:bg-black/80"><X size={14}/></button>
-        </div>
-
-        {/* Progress Bar */}
-        <div
-          ref={progressBarRef}
-          className="absolute top-0 left-0 right-0 h-[2px] bg-[#333] group cursor-pointer"
-          onClick={(e) => seekWithinClip(e.clientX)}
-          onMouseDown={handleProgressBarMouseDown}
+        {/* 🔴 [핵심 수정] 모바일 대응 숨겨진 플레이어 
+           - w-0 h-0 대신 w-1 h-1 사용 (모바일 브라우저 재생 차단 방지)
+           - 화면 밖으로 위치 이동 (-right-10 -bottom-10)
+           - videoVisible 상태에 따라 위치와 크기를 전환
+        */}
+        <div 
+            className={`fixed z-40 transition-all duration-300 shadow-2xl rounded-lg overflow-hidden border border-[#333] bg-black 
+            ${isVideoVisible 
+                ? 'bottom-32 right-4 w-80 aspect-video opacity-100 translate-y-0 pointer-events-auto' 
+                : '-bottom-10 -right-10 w-1 h-1 opacity-0 pointer-events-none' 
+            }`}
         >
-           <div className="h-full bg-red-600 absolute top-0 left-0" style={{ width: `${Math.min(100, progressPercent)}%` }}></div>
-           <div className="absolute top-[-4px] h-[10px] w-full opacity-0 group-hover:opacity-100"></div>
-        </div>
-
-        {/* Left: Controls */}
-        <div className="md:w-[30%] w-auto flex items-center gap-3 md:gap-4 text-white">
-              <button onClick={playPrev} className="hover:text-[#AAAAAA]">
-                 <SkipBack size={20} fill="currentColor"/>
-              </button>
-              <button onClick={togglePlay} className="hover:text-[#AAAAAA]">
-                 {isPlaying ? <Pause size={32} fill="currentColor"/> : <Play size={32} fill="currentColor"/>}
-              </button>
-              <button onClick={playNext} className="hover:text-[#AAAAAA]">
-                 <SkipForward size={20} fill="currentColor"/>
-              </button>
-           <div className="text-xs text-[#AAAAAA] ml-4 font-mono hidden md:block">
-              {formatTime(currentProgress)} / {formatTime(duration)}
-           </div>
-        </div>
-
-        {/* Center: Song Info */}
-        <div className="flex-1 flex items-center justify-center gap-3 md:gap-4 min-w-0 px-2 md:px-4">
-            {currentClip && (
-                <>
-                <div className="relative group/thumb cursor-pointer" onClick={() => setIsVideoVisible(!isVideoVisible)}>
-                    {/* 썸네일이 없으면 기본 이미지 처리 */}
-                    <img src={videos.find(v => v.id === currentClip.videoId)?.thumbnailUrl || `https://img.youtube.com/vi/${currentClip.youtubeId}/default.jpg`} className="w-10 h-10 object-cover rounded bg-neutral-800" alt=""/>
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-opacity rounded">
-                        {isVideoVisible ? <Minimize2 size={16} className="text-white"/> : <Maximize2 size={16} className="text-white"/>}
-                    </div>
-                </div>
-                <div className="min-w-0 text-center md:text-left">
-                   <div className="text-white text-sm font-medium truncate">{currentClip.title}</div>
-                   <div className="text-[#AAAAAA] text-xs truncate flex items-center gap-1 justify-center md:justify-start">
-                     <span>{currentClip.artistName || 'Artist'}</span>
-                   </div>
-                </div>
-                <button className="text-[#AAAAAA] hover:text-white"><Heart size={16}/></button>
-                </>
+            <div id="global-player" className="w-full h-full"></div>
+            
+            {/* 닫기 버튼 (비디오 모드일 때만 표시) */}
+            {isVideoVisible && (
+                <button onClick={() => setIsVideoVisible(false)} className="absolute top-2 right-2 bg-black/60 p-1 rounded-full text-white hover:bg-black/80">
+                    <X size={14}/>
+                </button>
             )}
         </div>
+        
+        {/* 진행 바 */}
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#333]">
+           <div className="h-full bg-red-600 absolute top-0 left-0" style={{ width: `${Math.min(100, progressPercent)}%` }}></div>
+        </div>
 
-        {/* Right: Utility Controls */}
-        <div className="md:w-[30%] w-auto flex justify-end items-center gap-3 md:gap-4 text-[#AAAAAA]">
-             <button
-                onClick={() => setIsVideoVisible(!isVideoVisible)}
-                className={`hover:text-white transition-colors ${isVideoVisible ? 'text-red-500' : ''}`}
-                title="비디오 모드"
-             >
-                <Film size={20}/>
-             </button>
-             <button 
-                className={`hover:text-white ${isLooping ? 'text-red-500' : ''}`} 
-                onClick={() => setIsLooping(!isLooping)}
-                title="한 곡 반복"
-             >
-                <Repeat size={20}/>
-             </button>
-             <button className="hover:text-white"><Shuffle size={20}/></button>
-             <button className="hover:text-white hidden lg:block"><ListMusic size={20}/></button>
+        {/* 재생 컨트롤 */}
+        <div className="flex items-center gap-3 md:gap-4 text-white mr-4">
+           <button 
+             onClick={handlePlayPause} 
+             className="p-2 -m-2 active:scale-90 transition-transform" // 터치 편의성 개선
+           >
+              {isPlaying ? <Pause size={28} fill="currentColor"/> : <Play size={28} fill="currentColor"/>}
+           </button>
+           <button onClick={playNext} className="hidden md:block text-[#AAA] hover:text-white"><SkipForward size={20} fill="currentColor"/></button>
+        </div>
+
+        {/* 곡 정보 (클릭 시 비디오 모드 전환) */}
+        <div className="flex-1 min-w-0 mr-4 cursor-pointer active:opacity-70" onClick={() => setIsVideoVisible(true)}>
+            <div className="text-white text-sm font-medium truncate">{displayClip.title}</div>
+            <div className="text-[#AAAAAA] text-xs truncate">{displayClip.artistName}</div>
+        </div>
+
+        {/* 추가 컨트롤 */}
+        <div className="flex items-center gap-4 text-[#AAAAAA]">
+             <button className={`hover:text-white ${isLooping ? 'text-red-500' : ''}`} onClick={() => setIsLooping(!isLooping)}><Repeat size={20}/></button>
+             {/* 모바일용 다음 곡 버튼 추가 */}
+             <button className="hover:text-white md:hidden" onClick={playNext}><SkipForward size={20}/></button>
+             <button className="hover:text-white hidden md:block"><ListMusic size={20}/></button>
         </div>
       </div>
     );
