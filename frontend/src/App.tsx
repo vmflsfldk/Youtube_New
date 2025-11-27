@@ -525,18 +525,35 @@ export default function App() {
   }, []);
 
   // --- YouTube IFrame API Loader ---
+  const [isYouTubeReady, setIsYouTubeReady] = useState(() => !!(typeof window !== 'undefined' && window.YT));
+
   useEffect(() => {
-    if (!window.YT) {
+    // 이미 로드된 경우 즉시 준비 상태로 설정
+    if (window.YT && typeof window.YT.Player === 'function') {
+      setIsYouTubeReady(true);
+      return;
+    }
+
+    const handleReady = () => setIsYouTubeReady(true);
+    window.onYouTubeIframeAPIReady = handleReady;
+
+    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
       const tag = document.createElement('script');
       tag.src = "https://www.youtube.com/iframe_api";
       const firstScriptTag = document.getElementsByTagName('script')[0];
       firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
     }
+
+    return () => {
+      if (window.onYouTubeIframeAPIReady === handleReady) {
+        delete window.onYouTubeIframeAPIReady;
+      }
+    };
   }, []);
 
   // --- Global YouTube Player Initialization ---
   useEffect(() => {
-    if (!currentClip || !window.YT) return;
+    if (!currentClip || !isYouTubeReady || !window.YT) return;
 
     if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
         playerRef.current.loadVideoById({
@@ -572,7 +589,7 @@ export default function App() {
             }
         }
     });
-  }, [currentClip, playNext]);
+  }, [currentClip, playNext, isYouTubeReady]);
 
   // --- Player Logic ---
   const loadClipToPlayer = (clip) => {
