@@ -896,6 +896,7 @@ export default function App() {
     const [selectedArtistId, setSelectedArtistId] = useState("");
     const [url, setUrl] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [loadingMessage, setLoadingMessage] = useState("");
     const [searchTerm, setSearchTerm] = useState("");
 
     const filteredArtists = useMemo(() => {
@@ -904,27 +905,80 @@ export default function App() {
     }, [artists, searchTerm]);
 
     const handleRegisterAndSuggest = async () => {
-         if (!ensureAuthenticated()) return;
          if (!url || !selectedArtistId) return;
          setIsLoading(true);
-         const res = await mockRegisterAndSuggestVideo(url);
          
-         if(res.success) {
-             const newVideo = {
-                 artistId: selectedArtistId, 
-                 ...res.data, 
-                 createdAt: serverTimestamp()
-             };
-             const docRef = await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'videos'), newVideo);
-             
+         try {
+             // 1단계: 영상 저장 (Video Registration)
+             setLoadingMessage("영상 정보를 저장하고 있습니다...");
+             const videoRes = await fetch('/api/videos', {
+                 method: 'POST',
+                 headers: {
+                     'Content-Type': 'application/json',
+                     // 로그인된 유저 정보 헤더 (필요시)
+                     'X-User-Email': user?.email || '',
+                     'X-User-Name': user?.displayName || ''
+                 },
+                 body: JSON.stringify({
+                     videoUrl: url,
+                     artistId: selectedArtistId
+                 })
+             });
+
+             if (!videoRes.ok) {
+                 throw new Error("영상 등록에 실패했습니다.");
+             }
+
+             const videoData = await videoRes.json();
+
+             // 2단계: 클립 구간 자동 추정 (댓글/챕터 분석)
+             setLoadingMessage("댓글과 챕터를 분석하여 노래 구간을 찾고 있습니다...");
+             const detectRes = await fetch('/api/clips/auto-detect', {
+                 method: 'POST',
+                 headers: {
+                     'Content-Type': 'application/json',
+                     'X-User-Email': user?.email || '',
+                     'X-User-Name': user?.displayName || ''
+                 },
+                 body: JSON.stringify({
+                     videoId: videoData.id,
+                     mode: 'chapters' // 'chapters' 모드는 worker.ts에서 댓글과 설명란을 모두 분석함
+                 })
+             });
+
+             const candidates = await detectRes.json();
+
+             // 3단계: 데이터 매핑 및 에디터로 이동
              const artist = artists.find(a => a.id === selectedArtistId);
              setSelectedArtist(artist);
-             setSelectedVideo({ id: docRef.id, ...newVideo }); 
+             
+             // 백엔드 데이터를 프론트엔드 형식에 맞게 변환
+             const suggestions = candidates.map((c: any) => ({
+                 start: c.startSec,
+                 end: c.endSec,
+                 label: c.label,
+                 type: 'comment_timestamp', // 타입을 지정하여 UI에 표시
+                 score: c.score
+             }));
+
+             setSelectedVideo({ 
+                 id: videoData.id, 
+                 youtubeId: videoData.youtubeVideoId,
+                 title: videoData.title,
+                 thumbnailUrl: videoData.thumbnailUrl,
+                 duration: videoData.durationSec,
+                 suggestions: suggestions // 분석된 후보군 전달
+             }); 
+             
              setView('clip_editor');
-         } else {
-             alert("URL 오류 또는 이미 등록된 영상입니다.");
+
+         } catch (error) {
+             console.error(error);
+             alert("처리 중 오류가 발생했습니다: " + (error as Error).message);
+         } finally {
+             setIsLoading(false);
+             setLoadingMessage("");
          }
-         setIsLoading(false);
     };
 
     return (
@@ -934,7 +988,7 @@ export default function App() {
                     <FileVideo className="text-red-600" size={32}/>
                 </div>
                 <h2 className="text-3xl font-bold text-white mb-2">영상 및 클립 등록</h2>
-                <p className="text-[#AAAAAA] text-sm">아티스트를 선택하고 유튜브 링크를 입력하면 AI가 하이라이트를 추천합니다.</p>
+                <p className="text-[#AAAAAA] text-sm">아티스트를 선택하고 유튜브 링크를 입력하면 영상을 저장하고 댓글을 분석합니다.</p>
              </div>
              
              <div className="w-full max-w-2xl bg-[#181818] p-8 rounded-xl border border-[#333] shadow-2xl space-y-8">
@@ -985,12 +1039,19 @@ export default function App() {
                        disabled={isLoading || !url || !selectedArtistId}
                        className="w-full bg-red-600 text-white font-bold py-4 rounded-lg hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
                      >
-                        {isLoading ? <span className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"/> : <><Wand2 size={18}/> 분석 및 등록 시작</>}
+                        {isLoading ? (
+                            <div className="flex items-center gap-2">
+                                <span className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"/>
+                                <span>{loadingMessage}</span>
+                            </div>
+                        ) : (
+                            <><Wand2 size={18}/> 영상 저장 및 구간 분석 시작</>
+                        )}
                      </button>
                  </div>
                  <div className="bg-[#222] p-4 rounded-lg text-xs text-[#888] flex gap-2 items-start">
                     <AlertCircle size={14} className="mt-0.5 flex-shrink-0"/>
-                    <span>영상을 등록하면 메타데이터만 저장되며, 원본 영상은 YouTube 플레이어를 통해 재생됩니다. 저작권 정책을 준수합니다.</span>
+                    <span>영상이 먼저 라이브러리에 저장되며, 이후 댓글 타임스탬프를 분석하여 클립 후보를 제안합니다.</span>
                  </div>
              </div>
         </div>
