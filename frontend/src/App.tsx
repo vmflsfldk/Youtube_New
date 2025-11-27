@@ -731,13 +731,36 @@ export default function App() {
   );
 
   const SidebarItem = ({ icon, label, active, onClick }) => (
-    <button 
+    <button
       onClick={onClick}
       className={`w-full flex items-center gap-5 px-4 py-3 rounded-lg transition-all duration-200 ${active ? 'bg-[#282828] text-white font-medium' : 'text-[#909090] hover:text-white'}`}
     >
       {React.cloneElement(icon, { size: 22 })}
       <span className="text-sm font-medium">{label}</span>
     </button>
+  );
+
+  const MobileNav = () => (
+    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#030303]/95 backdrop-blur-md border-t border-[#222] z-[60] pb-safe">
+      <div className="flex justify-around items-center h-14">
+        <button className={`flex flex-col items-center justify-center w-full h-full ${view === 'home' ? 'text-white' : 'text-[#666]'}`} onClick={() => setView('home')}>
+           <Home size={24} />
+           <span className="text-[10px] mt-1">홈</span>
+        </button>
+        <button className={`flex flex-col items-center justify-center w-full h-full ${view === 'artist_list' ? 'text-white' : 'text-[#666]'}`} onClick={() => setView('artist_list')}>
+           <User size={24} />
+           <span className="text-[10px] mt-1">아티스트</span>
+        </button>
+        <button className={`flex flex-col items-center justify-center w-full h-full ${view === 'library' ? 'text-white' : 'text-[#666]'}`} onClick={() => setView('library')}>
+           <Disc size={24} />
+           <span className="text-[10px] mt-1">곡 DB</span>
+        </button>
+        <button className={`flex flex-col items-center justify-center w-full h-full ${view === 'register_media' ? 'text-white' : 'text-[#666]'}`} onClick={() => setView('register_media')}>
+           <FileVideo size={24} />
+           <span className="text-[10px] mt-1">등록</span>
+        </button>
+      </div>
+    </div>
   );
 
   // ... (RightSidebar, ArtistCard, RegisterMediaView, HomeView, LiveBroadcastView, ArtistListView, SongDatabaseView, AddArtistView, AddVideoView, ClipEditorView, BottomPlayer components remain exactly as before) ...
@@ -1118,7 +1141,14 @@ export default function App() {
     }).slice(0, 8), [clips]);
 
     return (
-    <div className="p-8 space-y-10 pb-32">
+    <div className="p-4 md:p-8 space-y-10 pb-32 md:pb-32">
+      <div className="md:hidden flex items-center gap-2 mb-4">
+        <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center">
+          <Play fill="white" size={14} className="ml-0.5" />
+        </div>
+        <span className="text-white font-bold text-xl tracking-tighter">Music</span>
+      </div>
+
       <div className="flex gap-2 mb-4">
         <button className="px-3 py-1.5 rounded-lg bg-white text-black text-sm font-bold">홈</button>
         <button className="px-3 py-1.5 rounded-lg bg-[#282828] hover:bg-[#3E3E3E] text-white text-sm font-bold transition-colors">뮤직</button>
@@ -1132,7 +1162,7 @@ export default function App() {
           </h2>
           <button onClick={() => setView('register_media')} className="text-xs text-[#AAAAAA] hover:text-white">더보기</button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {latestVideos.map(video => {
              const artist = artists.find(a => a.id === video.artistId);
              return (
@@ -2062,7 +2092,7 @@ export default function App() {
     const progressPercent = duration > 0 ? (currentProgress / duration) * 100 : 0;
 
     return (
-      <div className="fixed bottom-0 left-0 right-0 h-[72px] bg-[#212121] flex items-center px-4 z-50 border-t border-[#333]">
+      <div className="fixed left-0 right-0 z-50 bg-[#212121] border-t border-[#333] md:bottom-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] h-[64px] md:h-[72px] flex items-center px-4 shadow-lg transition-all duration-200">
         {/* Hidden/Floating Global Player */}
         {/* 중요: visibility: hidden으로 숨겨두되 DOM에는 존재해야 API가 작동함 */}
         <div className={`fixed bottom-24 right-4 z-40 transition-all duration-300 shadow-2xl rounded-lg overflow-hidden border border-[#333] ${isVideoVisible ? 'w-80 aspect-video opacity-100 translate-y-0' : 'w-0 h-0 opacity-0 translate-y-10 pointer-events-none'}`}>
@@ -2077,7 +2107,7 @@ export default function App() {
         </div>
 
         {/* Left: Controls */}
-        <div className="w-[30%] flex items-center gap-4 text-white">
+        <div className="md:w-[30%] w-auto flex items-center gap-3 md:gap-4 text-white">
               <button onClick={playPrev} className="hover:text-[#AAAAAA]">
                  <SkipBack size={20} fill="currentColor"/>
               </button>
@@ -2093,7 +2123,7 @@ export default function App() {
         </div>
 
         {/* Center: Song Info */}
-        <div className="flex-1 flex items-center justify-center gap-4 min-w-0 px-4">
+        <div className="flex-1 flex items-center justify-center gap-3 md:gap-4 min-w-0 px-2 md:px-4">
             {currentClip && (
                 <>
                 <div className="relative group/thumb cursor-pointer" onClick={() => setIsVideoVisible(!isVideoVisible)}>
@@ -2115,8 +2145,8 @@ export default function App() {
         </div>
 
         {/* Right: Utility Controls */}
-        <div className="w-[30%] flex justify-end items-center gap-4 text-[#AAAAAA]">
-             <button 
+        <div className="md:w-[30%] w-auto flex justify-end items-center gap-3 md:gap-4 text-[#AAAAAA]">
+             <button
                 onClick={() => setIsVideoVisible(!isVideoVisible)}
                 className={`hover:text-white transition-colors ${isVideoVisible ? 'text-red-500' : ''}`}
                 title="비디오 모드"
@@ -2202,14 +2232,14 @@ export default function App() {
     <div className="flex h-screen bg-[#030303] text-white font-sans overflow-hidden select-none">
       <Sidebar />
       <main className="flex-1 relative flex flex-col min-w-0 bg-[#030303]">
-        <header className="h-16 flex items-center justify-between px-8 sticky top-0 z-10 bg-[#030303]/95 backdrop-blur-md">
+        <header className="hidden md:flex h-16 items-center justify-between px-8 sticky top-0 z-10 bg-[#030303]/95 backdrop-blur-md">
            <div className="flex-1 max-w-xl relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#AAAAAA]" size={20} />
               <input type="text" placeholder="검색" className="w-full bg-[#212121] text-white pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:bg-white focus:text-black placeholder-[#AAAAAA] transition-colors" />
            </div>
            <div className="ml-4 w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-blue-500 flex items-center justify-center text-xs font-bold">ME</div>
         </header>
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 overflow-y-auto custom-scrollbar pb-[calc(64px+56px+env(safe-area-inset-bottom))] md:pb-24">
            {view === 'home' && <HomeView />}
            {view === 'artist_list' && <ArtistListView />}
            {view === 'artist_detail' && <ArtistDetailView />}
@@ -2223,6 +2253,7 @@ export default function App() {
       </main>
       <RightSidebar />
       <BottomPlayer />
+      <MobileNav />
     </div>
   );
 }
