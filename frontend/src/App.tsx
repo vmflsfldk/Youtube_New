@@ -593,15 +593,26 @@ export default function App() {
 
   // --- Player Logic ---
   const loadClipToPlayer = (clip) => {
-    setCurrentClip(clip);
+    if (!clip?.youtubeId) {
+      alert("유효한 YouTube ID가 없어 클립을 재생할 수 없습니다.");
+      return;
+    }
+
+    const normalizedClip = {
+      ...clip,
+      startTime: clip.startTime ?? 0,
+      endTime: clip.endTime ?? clip.duration ?? 0
+    };
+
+    setCurrentClip(normalizedClip);
     setIsPlaying(true);
-    if (!playlist.find(p => p.id === clip.id)) {
+    if (!playlist.find(p => p.id === normalizedClip.id)) {
       setPlaylist(prev => [{
-        id: clip.id,
-        title: clip.title,
-        artist: clip.artistName || 'Unknown', 
-        duration: clip.endTime - clip.startTime,
-        ...clip // Store full object for restoration
+        id: normalizedClip.id,
+        title: normalizedClip.title,
+        artist: normalizedClip.artistName || 'Unknown',
+        duration: normalizedClip.endTime - normalizedClip.startTime,
+        ...normalizedClip // Store full object for restoration
       }, ...prev]);
     }
   };
@@ -2194,8 +2205,18 @@ export default function App() {
     const togglePlay = useCallback(() => {
       if (!currentClip) {
           if (playlist.length > 0) {
-              setCurrentClip(playlist[0]);
-              setIsPlaying(true);
+              const firstClip = playlist[0];
+
+              if (!firstClip?.youtubeId) {
+                  alert("대기열의 첫 곡에 유효한 YouTube ID가 없어 재생할 수 없습니다.");
+                  return;
+              }
+
+              loadClipToPlayer({
+                  ...firstClip,
+                  startTime: firstClip.startTime ?? 0,
+                  endTime: firstClip.endTime ?? firstClip.duration ?? 0
+              });
           } else {
               alert("재생할 곡이 없습니다. 영상을 대기열에 추가해주세요.");
           }
@@ -2216,7 +2237,7 @@ export default function App() {
               console.error("Player API Error:", e);
           }
       }
-    }, [currentClip, playlist]);
+    }, [currentClip, loadClipToPlayer, playlist]);
 
     return (
       <div className="fixed left-0 right-0 z-50 bg-[#212121] border-t border-[#333] md:bottom-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] h-[64px] md:h-[72px] flex items-center px-4 shadow-lg transition-all duration-200 group">
