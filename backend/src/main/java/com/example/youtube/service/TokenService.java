@@ -21,7 +21,7 @@ public class TokenService {
     private final long tokenTtlSeconds;
 
     public TokenService(@Value("${app.auth.secret:change-me}") String secret,
-                        @Value("${app.auth.token-ttl-seconds:86400}") long tokenTtlSeconds,
+                        @Value("${app.auth.token-ttl-seconds:1800}") long tokenTtlSeconds,
                         ObjectMapper objectMapper) {
         this.secretKey = secret.getBytes(StandardCharsets.UTF_8);
         this.tokenTtlSeconds = tokenTtlSeconds;

@@ -21,6 +21,8 @@ app:
     allowed-origins:
       - http://localhost:5173
       - https://youtube-timecapsule.pages.dev
+  auth:
+    token-ttl-seconds: 1800
   youtube:
     api-key: ${YOUTUBE_API_KEY:}
 chzzk:
