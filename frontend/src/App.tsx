@@ -2130,51 +2130,58 @@ export default function App() {
   };
 
   const BottomPlayer = () => {
+    // 현재 재생 중인 곡 정보 (없으면 기본값)
     const displayClip = currentClip || { title: "재생 중인 곡 없음", artistName: "Artist", startTime: 0, endTime: 0 };
     const duration = displayClip.endTime - displayClip.startTime;
     const currentProgress = Math.max(0, playerProgress - displayClip.startTime);
     const progressPercent = duration > 0 ? (currentProgress / duration) * 100 : 0;
 
-    // 재생/일시정지 토글 핸들러
-    const handlePlayPause = (e) => {
-        e.stopPropagation(); // 클릭 이벤트 전파 방지 (부모 요소 클릭 방지)
-        
-        // 1. 현재 곡이 없으면 재생목록의 첫 곡 재생 시도
-        if (!currentClip) {
-            if (playlist.length > 0) {
-                setCurrentClip(playlist[0]);
-                setIsPlaying(true);
-            } else {
-                alert("재생할 곡이 없습니다.");
-            }
-            return;
-        }
+    // 재생/일시정지 토글 (안전 장치 추가)
+    const togglePlay = useCallback(() => {
+      // 1. 현재 곡이 없으면 재생목록의 첫 곡 재생 시도
+      if (!currentClip) {
+          if (playlist.length > 0) {
+              setCurrentClip(playlist[0]);
+              setIsPlaying(true);
+          } else {
+              alert("재생할 곡이 없습니다. 영상을 대기열에 추가해주세요.");
+          }
+          return;
+      }
 
-        // 2. 플레이어가 준비된 상태면 재생/일시정지 토글
-        if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
-            if (isPlaying) {
-                playerRef.current.pauseVideo();
-            } else {
-                playerRef.current.playVideo();
-            }
-            setIsPlaying(!isPlaying);
-        } else {
-            console.warn("YouTube Player is waiting...");
-        }
-    };
+      // 2. 플레이어 객체 확인 후 명령 전달
+      if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
+          // DOM 연결 상태 확인 (에러 방지용 try-catch)
+          try {
+              const playerState = playerRef.current.getPlayerState();
+              // playing(1) or buffering(3) 상태면 일시정지
+              if (playerState === 1 || playerState === 3) {
+                  playerRef.current.pauseVideo();
+                  setIsPlaying(false);
+              } else {
+                  playerRef.current.playVideo();
+                  setIsPlaying(true);
+              }
+          } catch (e) {
+              console.error("Player API Error:", e);
+              // 에러 발생 시 플레이어 재로딩 시도 (선택 사항)
+          }
+      }
+    }, [currentClip, playlist]);
 
     return (
       <div className="fixed left-0 right-0 z-50 bg-[#212121] border-t border-[#333] md:bottom-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] h-[64px] md:h-[72px] flex items-center px-4 shadow-lg transition-all duration-200">
+        
         {/* 🔴 [핵심 수정] 모바일 대응 숨겨진 플레이어 
-           - w-0 h-0 대신 w-1 h-1 사용 (모바일 브라우저 재생 차단 방지)
-           - 화면 밖으로 위치 이동 (-right-10 -bottom-10)
-           - videoVisible 상태에 따라 위치와 크기를 전환
+           - 1. w-0 h-0 대신 w-px h-px (1픽셀) 사용 -> 브라우저가 '화면에 있다'고 인식함
+           - 2. pointer-events-none으로 터치 방지
+           - 3. 화면 밖(-bottom-10)에 배치하여 시각적으로 숨김
         */}
         <div 
             className={`fixed z-40 transition-all duration-300 shadow-2xl rounded-lg overflow-hidden border border-[#333] bg-black 
             ${isVideoVisible 
-                ? 'bottom-32 right-4 w-80 aspect-video opacity-100 translate-y-0 pointer-events-auto' 
-                : '-bottom-10 -right-10 w-1 h-1 opacity-0 pointer-events-none' 
+                ? 'bottom-32 right-4 w-80 aspect-video opacity-100 translate-y-0 pointer-events-auto' // 보이는 상태
+                : '-bottom-10 -right-10 w-px h-px opacity-0 pointer-events-none' // 숨김 상태 (크기 유지!)
             }`}
         >
             <div id="global-player" className="w-full h-full"></div>
@@ -2188,19 +2195,34 @@ export default function App() {
         </div>
         
         {/* 진행 바 */}
-        <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#333]">
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#333] group cursor-pointer">
            <div className="h-full bg-red-600 absolute top-0 left-0" style={{ width: `${Math.min(100, progressPercent)}%` }}></div>
+           {/* 터치 영역 확보를 위한 투명 바 */}
+           <div className="absolute top-[-6px] h-[14px] w-full opacity-0"></div>
         </div>
 
         {/* 재생 컨트롤 */}
         <div className="flex items-center gap-3 md:gap-4 text-white mr-4">
            <button 
-             onClick={handlePlayPause} 
-             className="p-2 -m-2 active:scale-90 transition-transform" // 터치 편의성 개선
+             onClick={playPrev} 
+             className="p-2 active:scale-90 transition-transform text-[#AAA] hover:text-white"
+           >
+             <SkipBack size={20} fill="currentColor"/>
+           </button>
+           
+           <button 
+             onClick={togglePlay} 
+             className="p-2 -m-2 active:scale-90 transition-transform" // 터치 영역 확대
            >
               {isPlaying ? <Pause size={28} fill="currentColor"/> : <Play size={28} fill="currentColor"/>}
            </button>
-           <button onClick={playNext} className="hidden md:block text-[#AAA] hover:text-white"><SkipForward size={20} fill="currentColor"/></button>
+           
+           <button 
+             onClick={playNext} 
+             className="p-2 active:scale-90 transition-transform text-[#AAA] hover:text-white"
+           >
+             <SkipForward size={20} fill="currentColor"/>
+           </button>
         </div>
 
         {/* 곡 정보 (클릭 시 비디오 모드 전환) */}
@@ -2212,8 +2234,6 @@ export default function App() {
         {/* 추가 컨트롤 */}
         <div className="flex items-center gap-4 text-[#AAAAAA]">
              <button className={`hover:text-white ${isLooping ? 'text-red-500' : ''}`} onClick={() => setIsLooping(!isLooping)}><Repeat size={20}/></button>
-             {/* 모바일용 다음 곡 버튼 추가 */}
-             <button className="hover:text-white md:hidden" onClick={playNext}><SkipForward size={20}/></button>
              <button className="hover:text-white hidden md:block"><ListMusic size={20}/></button>
         </div>
       </div>
