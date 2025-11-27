@@ -265,7 +265,7 @@ export default function App() {
   const [playlist, setPlaylist] = useState(INITIAL_PLAYLIST);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerProgress, setPlayerProgress] = useState(0);
-  const [isLooping, setIsLooping] = useState(true);
+  const [isLooping, setIsLooping] = useState(false);
   const [isVideoVisible, setIsVideoVisible] = useState(false);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
   
@@ -358,6 +358,21 @@ export default function App() {
     }
     return true;
   }, [user]);
+
+  // --- Player Logic: Play Next/Prev ---
+  const playNext = useCallback(() => {
+      if (playlist.length === 0) return;
+      const currentIndex = playlist.findIndex(p => p.id === currentClip?.id);
+      const nextIndex = (currentIndex + 1) % playlist.length;
+      setCurrentClip(playlist[nextIndex]);
+  }, [playlist, currentClip]);
+
+  const playPrev = useCallback(() => {
+      if (playlist.length === 0) return;
+      const currentIndex = playlist.findIndex(p => p.id === currentClip?.id);
+      const prevIndex = (currentIndex - 1 + playlist.length) % playlist.length;
+      setCurrentClip(playlist[prevIndex]);
+  }, [playlist, currentClip]);
 
   const requestApiToken = async (credential) => {
     const response = await apiFetch('/api/auth/google', {
@@ -494,6 +509,46 @@ export default function App() {
     }
   }, []);
 
+  // --- Global YouTube Player Initialization ---
+  useEffect(() => {
+    if (!currentClip || !window.YT) return;
+
+    if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
+        playerRef.current.loadVideoById({
+            videoId: currentClip.youtubeId,
+            startSeconds: currentClip.startTime,
+            endSeconds: currentClip.endTime
+        });
+        return;
+    }
+
+    playerRef.current = new window.YT.Player('global-player', {
+        height: '100%',
+        width: '100%',
+        videoId: currentClip.youtubeId,
+        playerVars: {
+            autoplay: 1,
+            controls: 0,
+            start: currentClip.startTime,
+            end: currentClip.endTime,
+            origin: window.location.origin
+        },
+        events: {
+            onReady: (event) => {
+                event.target.playVideo();
+                setIsPlaying(true);
+            },
+            onStateChange: (event) => {
+                if (event.data === window.YT.PlayerState.PLAYING) setIsPlaying(true);
+                if (event.data === window.YT.PlayerState.PAUSED) setIsPlaying(false);
+                if (event.data === window.YT.PlayerState.ENDED) {
+                    playNext();
+                }
+            }
+        }
+    });
+  }, [currentClip, playNext]);
+
   // --- Player Logic ---
   const loadClipToPlayer = (clip) => {
     setCurrentClip(clip);
@@ -517,7 +572,7 @@ export default function App() {
         youtubeId: video.youtubeId,
         title: video.title,
         startTime: 0,
-        endTime: video.duration,
+        endTime: video.duration || 3600,
         artistName: artist ? (artist.primaryName || artist.name) : 'Unknown',
         tags: ['Full Video']
     };
@@ -562,19 +617,34 @@ export default function App() {
 
   useEffect(() => {
     if (playerIntervalRef.current) clearInterval(playerIntervalRef.current);
-    if (isPlaying && currentClip) {
+    
+    if (isPlaying && currentClip && playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
       playerIntervalRef.current = setInterval(() => {
-        if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
-          const currentTime = playerRef.current.getCurrentTime();
-          setPlayerProgress(currentTime);
-          if (currentTime >= currentClip.endTime + 0.5 && isLooping) {
-             playerRef.current.seekTo(currentClip.startTime);
-          }
+        const currentTime = playerRef.current.getCurrentTime();
+        setPlayerProgress(currentTime);
+
+        if (currentClip.endTime && currentTime >= currentClip.endTime) {
+             if (isLooping) {
+                 playerRef.current.seekTo(currentClip.startTime);
+             } else {
+                 playNext();
+             }
         }
-      }, 200);
+      }, 500);
     }
     return () => clearInterval(playerIntervalRef.current);
-  }, [isPlaying, currentClip, isLooping]);
+  }, [isPlaying, currentClip, isLooping, playNext]);
+
+  const togglePlay = () => {
+      if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
+          if (isPlaying) {
+              playerRef.current.pauseVideo();
+          } else {
+              playerRef.current.playVideo();
+          }
+          setIsPlaying(!isPlaying);
+      }
+  };
 
   const toggleFavorite = async (e, artist) => {
     e.stopPropagation();
@@ -780,7 +850,7 @@ export default function App() {
                                     </div>
                                     <div className="min-w-0">
                                         <p className={`text-xs truncate font-medium ${currentClip?.id === track.id ? 'text-red-500' : 'text-[#E1E1E1]'}`}>{track.title}</p>
-                                        <p className="text-[10px] text-[#888] truncate">{track.artist}</p>
+                                        <p className="text-[10px] text-[#888] truncate">{track.artist || track.artistName || 'Unknown'}</p>
                                     </div>
                                 </div>
                                 <button onClick={() => removeFromQueue(idx)} className="opacity-0 group-hover:opacity-100 text-[#666] hover:text-red-500 px-2">
@@ -1986,42 +2056,39 @@ export default function App() {
   };
 
   const BottomPlayer = () => {
-    const displayClip = currentClip || { title: "재생 중인 곡 없음", artist: "Artist", startTime: 0, endTime: 0 };
-    const progress = displayClip.endTime > 0 ? ((playerProgress - displayClip.startTime) / (displayClip.endTime - displayClip.startTime)) * 100 : 0;
+    const displayClip = currentClip || { title: "재생 중인 곡 없음", artistName: "Artist", startTime: 0, endTime: 0 };
+    const duration = displayClip.endTime - displayClip.startTime;
+    const currentProgress = Math.max(0, playerProgress - displayClip.startTime);
+    const progressPercent = duration > 0 ? (currentProgress / duration) * 100 : 0;
 
     return (
       <div className="fixed bottom-0 left-0 right-0 h-[72px] bg-[#212121] flex items-center px-4 z-50 border-t border-[#333]">
         {/* Hidden/Floating Global Player */}
-        <div className={`fixed bottom-24 right-4 z-40 transition-all duration-300 shadow-2xl rounded-lg overflow-hidden border border-[#333] ${isVideoVisible ? 'w-80 aspect-video opacity-100 translate-y-0' : 'w-0 h-0 opacity-0 translate-y-10'}`}>
+        {/* 중요: visibility: hidden으로 숨겨두되 DOM에는 존재해야 API가 작동함 */}
+        <div className={`fixed bottom-24 right-4 z-40 transition-all duration-300 shadow-2xl rounded-lg overflow-hidden border border-[#333] ${isVideoVisible ? 'w-80 aspect-video opacity-100 translate-y-0' : 'w-0 h-0 opacity-0 translate-y-10 pointer-events-none'}`}>
             <div id="global-player" className="w-full h-full"></div>
-            {/* Close Button for PiP */}
             <button onClick={() => setIsVideoVisible(false)} className="absolute top-2 right-2 bg-black/60 p-1 rounded-full text-white hover:bg-black/80"><X size={14}/></button>
         </div>
-        
-        {/* Hidden Div Placeholder if not visible to maintain player instance */}
-        {!isVideoVisible && <div id="global-player-placeholder" className="hidden"></div>}
 
-        {/* Progress Bar (Absolute Top) */}
+        {/* Progress Bar */}
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#333] group cursor-pointer">
-           <div className="h-full bg-red-600 absolute top-0 left-0" style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}></div>
+           <div className="h-full bg-red-600 absolute top-0 left-0" style={{ width: `${Math.min(100, progressPercent)}%` }}></div>
            <div className="absolute top-[-4px] h-[10px] w-full opacity-0 group-hover:opacity-100"></div>
         </div>
 
-        {/* Info */}
-        <div className="w-[30%] flex items-center gap-4">
-           <div className="flex items-center gap-4 text-white">
-              <button onClick={() => setIsPlaying(!isPlaying)} className="hover:text-[#AAAAAA]">
+        {/* Left: Controls */}
+        <div className="w-[30%] flex items-center gap-4 text-white">
+              <button onClick={playPrev} className="hover:text-[#AAAAAA]">
                  <SkipBack size={20} fill="currentColor"/>
               </button>
-              <button onClick={() => setIsPlaying(!isPlaying)} className="hover:text-[#AAAAAA]">
+              <button onClick={togglePlay} className="hover:text-[#AAAAAA]">
                  {isPlaying ? <Pause size={32} fill="currentColor"/> : <Play size={32} fill="currentColor"/>}
               </button>
-              <button onClick={() => setIsPlaying(!isPlaying)} className="hover:text-[#AAAAAA]">
+              <button onClick={playNext} className="hover:text-[#AAAAAA]">
                  <SkipForward size={20} fill="currentColor"/>
               </button>
-           </div>
-           <div className="text-xs text-[#AAAAAA] ml-4 font-mono">
-              {formatTime(playerProgress)} / {formatTime(displayClip.endTime)}
+           <div className="text-xs text-[#AAAAAA] ml-4 font-mono hidden md:block">
+              {formatTime(currentProgress)} / {formatTime(duration)}
            </div>
         </div>
 
@@ -2030,7 +2097,8 @@ export default function App() {
             {currentClip && (
                 <>
                 <div className="relative group/thumb cursor-pointer" onClick={() => setIsVideoVisible(!isVideoVisible)}>
-                    <img src={videos.find(v => v.id === currentClip.videoId)?.thumbnailUrl || "https://via.placeholder.com/40"} className="w-10 h-10 object-cover rounded bg-neutral-800" alt=""/>
+                    {/* 썸네일이 없으면 기본 이미지 처리 */}
+                    <img src={videos.find(v => v.id === currentClip.videoId)?.thumbnailUrl || `https://img.youtube.com/vi/${currentClip.youtubeId}/default.jpg`} className="w-10 h-10 object-cover rounded bg-neutral-800" alt=""/>
                     <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-opacity rounded">
                         {isVideoVisible ? <Minimize2 size={16} className="text-white"/> : <Maximize2 size={16} className="text-white"/>}
                     </div>
@@ -2038,27 +2106,30 @@ export default function App() {
                 <div className="min-w-0 text-center md:text-left">
                    <div className="text-white text-sm font-medium truncate">{currentClip.title}</div>
                    <div className="text-[#AAAAAA] text-xs truncate flex items-center gap-1 justify-center md:justify-start">
-                     <span>{currentClip.tags?.[0] ? `#${currentClip.tags[0]}` : 'Clip'}</span>
-                     <span>•</span>
                      <span>{currentClip.artistName || 'Artist'}</span>
                    </div>
                 </div>
                 <button className="text-[#AAAAAA] hover:text-white"><Heart size={16}/></button>
-                <button className="text-[#AAAAAA] hover:text-white"><MoreHorizontal size={16}/></button>
                 </>
             )}
         </div>
 
-        {/* Right: Controls */}
+        {/* Right: Utility Controls */}
         <div className="w-[30%] flex justify-end items-center gap-4 text-[#AAAAAA]">
              <button 
                 onClick={() => setIsVideoVisible(!isVideoVisible)}
                 className={`hover:text-white transition-colors ${isVideoVisible ? 'text-red-500' : ''}`}
-                title="비디오 모드 전환"
+                title="비디오 모드"
              >
                 <Film size={20}/>
              </button>
-             <button className={`hover:text-white ${isLooping ? 'text-white' : ''}`} onClick={() => setIsLooping(!isLooping)}><Repeat size={20}/></button>
+             <button 
+                className={`hover:text-white ${isLooping ? 'text-red-500' : ''}`} 
+                onClick={() => setIsLooping(!isLooping)}
+                title="한 곡 반복"
+             >
+                <Repeat size={20}/>
+             </button>
              <button className="hover:text-white"><Shuffle size={20}/></button>
              <button className="hover:text-white hidden lg:block"><ListMusic size={20}/></button>
         </div>
