@@ -1838,7 +1838,14 @@ export default function App() {
 
     useEffect(() => {
       if (!window.YT || !selectedVideo) return;
-      if (selectedVideo.suggestions) { setRecommendations(prev => [...prev, ...selectedVideo.suggestions]); }
+
+      // 등록 화면에서 넘어온 suggestions가 있다면 초기값으로 사용
+      if (selectedVideo.suggestions && selectedVideo.suggestions.length > 0) {
+        setRecommendations(selectedVideo.suggestions);
+      } else {
+        // suggestions가 없으면 초기화 (이전 비디오 데이터 잔존 방지)
+        setRecommendations([]);
+      }
       const newPlayer = new window.YT.Player('editor-player', {
         height: '100%', width: '100%', videoId: selectedVideo.youtubeId,
         playerVars: { 'autoplay': 1, 'controls': 1 },
@@ -1849,16 +1856,45 @@ export default function App() {
       return () => { if(newPlayer.destroy) newPlayer.destroy(); }
     }, [selectedVideo]);
 
-    const runAutoRecommendation = () => {
+    const runAutoRecommendation = async () => {
+      if (!selectedVideo?.id) return;
       setIsAnalyzing(true);
-      setTimeout(() => {
-        const recs = mockAnalyzeVideo(duration);
-        setRecommendations(prev => {
-            const combined = [...prev, ...recs];
-            return combined.filter((v,i,a)=>a.findIndex(t=>(t.start === v.start))===i);
+
+      try {
+        const response = await apiFetch('/api/clips/auto-detect', {
+          method: 'POST',
+          headers: buildApiHeaders(user),
+          body: JSON.stringify({
+            videoId: selectedVideo.id,
+            mode: 'chapters'
+          })
         });
+
+        if (response.ok) {
+          const candidates = await response.json();
+
+          const newRecs = candidates.map((c) => ({
+            start: c.startSec,
+            end: c.endSec,
+            label: c.label,
+            type: 'comment_chapter',
+            score: c.score
+          }));
+
+          setRecommendations(prev => {
+            const combined = [...prev, ...newRecs];
+            return combined.filter((v,i,a) => a.findIndex(t => Math.abs(t.start - v.start) < 1) === i);
+          });
+        } else {
+          console.warn("구간 추천 실패:", await response.text());
+          alert("댓글이나 챕터 정보를 가져오지 못했습니다. 영상에 타임스탬프 댓글이 있는지 확인해주세요.");
+        }
+      } catch (error) {
+        console.error("Auto-detect error:", error);
+        alert("분석 중 오류가 발생했습니다.");
+      } finally {
         setIsAnalyzing(false);
-      }, 1500);
+      }
     };
 
     const saveClip = async () => {
@@ -1926,16 +1962,16 @@ export default function App() {
              <div className="bg-[#181818] p-4 rounded-lg border border-[#282828]">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-white font-bold text-sm flex items-center gap-2"><Wand2 size={14}/> AI 추천 & 챕터</h3>
-                  <button onClick={runAutoRecommendation} disabled={isAnalyzing} className="text-xs text-purple-400 hover:text-purple-300">{isAnalyzing ? "분석중..." : "AI 정밀분석 실행"}</button>
+                  <button onClick={runAutoRecommendation} disabled={isAnalyzing} className="text-xs text-purple-400 hover:text-purple-300">{isAnalyzing ? "분석중..." : "댓글/챕터 가져오기"}</button>
                 </div>
                 <div className="space-y-2">
                    {recommendations.map((rec, i) => (
                       <div key={i} onClick={() => { setStartTime(rec.start); setEndTime(rec.end); editorPlayer?.seekTo(rec.start); }} className="p-2 hover:bg-[#282828] rounded cursor-pointer text-xs text-[#AAAAAA] flex justify-between items-center border border-transparent hover:border-[#333]">
-                         <div className="flex flex-col"><span className="text-white font-bold">{rec.label}</span><span className="text-[10px]">{rec.type === 'chapter' ? 'Youtube Chapter' : 'AI Analysis'}</span></div>
+                         <div className="flex flex-col"><span className="text-white font-bold">{rec.label}</span><span className="text-[10px]">{rec.type === 'chapter' ? 'YouTube Chapter' : 'Comment Timestamp'}</span></div>
                          <span className="font-mono">{formatTime(rec.start)}</span>
                       </div>
                    ))}
-                   {recommendations.length === 0 && !isAnalyzing && <p className="text-xs text-[#555] text-center py-4">감지된 구간이 없습니다.</p>}
+                   {recommendations.length === 0 && !isAnalyzing && <p className="text-xs text-[#555] text-center py-4">'댓글/챕터 가져오기'를 눌러<br/>타임스탬프를 불러오세요.</p>}
                 </div>
              </div>
              <div className="bg-[#181818] p-4 rounded-lg border border-[#282828] space-y-4">
