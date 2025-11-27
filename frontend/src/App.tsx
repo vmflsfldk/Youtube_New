@@ -227,10 +227,7 @@ const MOCK_LIVE_ARTISTS = [
   { id: 'svt', name: 'SEVENTEEN', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=SEVENTEEN' },
 ];
 
-const INITIAL_PLAYLIST = [
-  { id: 'p1', title: 'Love Poem', artist: 'IU', duration: 245 },
-  { id: 'p2', title: 'Dynamite', artist: 'BTS', duration: 199 },
-];
+const INITIAL_PLAYLIST = [];
 
 // --- Helpers ---
 const formatTime = (seconds) => {
@@ -261,8 +258,23 @@ export default function App() {
   const [savedPlaylists, setSavedPlaylists] = useState([]); 
 
   // Player & Playlist State
-  const [currentClip, setCurrentClip] = useState(null);
-  const [playlist, setPlaylist] = useState(INITIAL_PLAYLIST);
+  const [playlist, setPlaylist] = useState(() => {
+    try {
+      const saved = localStorage.getItem('player_queue');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error("재생목록 로드 실패", e);
+      return [];
+    }
+  });
+  const [currentClip, setCurrentClip] = useState(() => {
+    try {
+      const saved = localStorage.getItem('player_current_clip');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerProgress, setPlayerProgress] = useState(0);
   const [isLooping, setIsLooping] = useState(false);
@@ -276,6 +288,18 @@ export default function App() {
   const [isGoogleSdkReady, setIsGoogleSdkReady] = useState(false);
   const googleInitRef = useRef(false);
   const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+  useEffect(() => {
+    localStorage.setItem('player_queue', JSON.stringify(playlist));
+  }, [playlist]);
+
+  useEffect(() => {
+    if (currentClip) {
+      localStorage.setItem('player_current_clip', JSON.stringify(currentClip));
+    } else {
+      localStorage.removeItem('player_current_clip');
+    }
+  }, [currentClip]);
 
   useEffect(() => {
     const restoreSession = async () => {
