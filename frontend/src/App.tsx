@@ -1036,8 +1036,16 @@ export default function App() {
   };
 
   const HomeView = () => {
-    const latestVideos = useMemo(() => [...videos].sort((a,b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)).slice(0, 8), [videos]);
-    const latestClips = useMemo(() => [...clips].sort((a,b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)).slice(0, 8), [clips]);
+    const latestVideos = useMemo(() => [...videos].sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    }).slice(0, 8), [videos]);
+    const latestClips = useMemo(() => [...clips].sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    }).slice(0, 8), [clips]);
 
     return (
     <div className="p-8 space-y-10 pb-32">
@@ -1084,7 +1092,7 @@ export default function App() {
                      <img src={artist?.imageUrl} className="w-4 h-4 rounded-full" alt=""/>
                      <span className="truncate">{artist?.primaryName || artist?.name || 'Unknown'}</span>
                      <span>•</span>
-                     <span>{video.createdAt?.toDate ? new Date(video.createdAt.toDate()).toLocaleDateString() : 'N/A'}</span>
+                     <span>{video.createdAt ? new Date(video.createdAt).toLocaleDateString() : 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -1388,7 +1396,7 @@ export default function App() {
                            </div>
                         </div>
                         <h3 className="font-bold text-white text-sm truncate pr-2 group-hover:text-red-500 transition-colors">{video.title}</h3>
-                        <p className="text-xs text-[#666] mt-0.5">{video.createdAt?.toDate ? new Date(video.createdAt.toDate()).toLocaleDateString() : 'Unknown Date'}</p>
+                        <p className="text-xs text-[#666] mt-0.5">{video.createdAt ? new Date(video.createdAt).toLocaleDateString() : 'Unknown Date'}</p>
                      </div>
                   ))}
                </div>
