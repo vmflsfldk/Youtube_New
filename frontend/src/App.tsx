@@ -262,11 +262,12 @@ export default function App() {
 
   // Player & Playlist State
   const [currentClip, setCurrentClip] = useState(null);
-  const [playlist, setPlaylist] = useState(INITIAL_PLAYLIST); 
+  const [playlist, setPlaylist] = useState(INITIAL_PLAYLIST);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerProgress, setPlayerProgress] = useState(0);
   const [isLooping, setIsLooping] = useState(true);
-  const [isVideoVisible, setIsVideoVisible] = useState(false); 
+  const [isVideoVisible, setIsVideoVisible] = useState(false);
+  const [isRestoringSession, setIsRestoringSession] = useState(true);
   
   const playerRef = useRef(null);
   const playerIntervalRef = useRef(null);
@@ -274,6 +275,49 @@ export default function App() {
   const [isGoogleSdkReady, setIsGoogleSdkReady] = useState(false);
   const googleInitRef = useRef(false);
   const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+  useEffect(() => {
+    const restoreSession = async () => {
+      if (typeof window === 'undefined') return;
+      const stored = localStorage.getItem('googleAuth');
+      if (!stored) {
+        setIsRestoringSession(false);
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(stored);
+        const token = parsed?.token;
+        const savedUser = parsed?.user;
+        if (!token || !savedUser?.email) throw new Error('invalid stored credentials');
+
+        const headers = buildApiHeaders({ token, email: savedUser.email, displayName: savedUser.displayName });
+        const response = await apiFetch('/api/users/login', { method: 'POST', headers });
+        if (!response.ok) throw new Error('session validation failed');
+
+        const apiUser = await response.json();
+        const restoredUser = {
+          uid: String(apiUser.id ?? savedUser.uid ?? apiUser.email ?? savedUser.email),
+          displayName: apiUser.displayName || savedUser.displayName || savedUser.email,
+          email: apiUser.email || savedUser.email,
+          photoURL: savedUser.photoURL || '',
+          isAnonymous: false,
+          token
+        };
+
+        setUser(restoredUser);
+      } catch (error) {
+        console.warn('기존 세션을 복원하지 못했습니다.', error);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('googleAuth');
+        }
+      } finally {
+        setIsRestoringSession(false);
+      }
+    };
+
+    restoreSession();
+  }, []);
 
   useEffect(() => {
     const existing = document.querySelector('script[data-google-identity]');
@@ -295,6 +339,17 @@ export default function App() {
       script.remove();
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (user?.token && !user.isAnonymous) {
+      const { token, ...userProfile } = user;
+      localStorage.setItem('googleAuth', JSON.stringify({ token, user: userProfile }));
+      return;
+    }
+
+    localStorage.removeItem('googleAuth');
+  }, [user]);
 
   const ensureAuthenticated = useCallback(() => {
     if (!user) {
@@ -374,6 +429,9 @@ export default function App() {
         setUser(null);
         setFavorites(new Set());
         setSavedPlaylists([]);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('googleAuth');
+        }
       });
       return;
     }
@@ -381,6 +439,9 @@ export default function App() {
     setUser(null);
     setFavorites(new Set());
     setSavedPlaylists([]);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('googleAuth');
+    }
   };
 
   useEffect(() => {
@@ -1747,6 +1808,17 @@ export default function App() {
       </div>
     );
   };
+
+  if (isRestoringSession) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center px-6">
+        <div className="flex flex-col items-center space-y-3 text-center">
+          <div className="w-12 h-12 rounded-full border-4 border-[#333] border-t-white animate-spin" aria-label="세션 확인 중" />
+          <p className="text-sm text-[#AAAAAA]">이전 로그인 세션을 확인하고 있습니다...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     const isGoogleReady = isGoogleSdkReady && GOOGLE_CLIENT_ID;
