@@ -268,9 +268,10 @@ export default function App() {
   const [isLooping, setIsLooping] = useState(false);
   const [isVideoVisible, setIsVideoVisible] = useState(false);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
-  
+
   const playerRef = useRef(null);
   const playerIntervalRef = useRef(null);
+  const progressBarRef = useRef(null);
 
   const [isGoogleSdkReady, setIsGoogleSdkReady] = useState(false);
   const googleInitRef = useRef(false);
@@ -645,6 +646,49 @@ export default function App() {
           setIsPlaying(!isPlaying);
       }
   };
+
+  const seekWithinClip = useCallback((clientX, rect) => {
+    if (!currentClip || !playerRef.current) return;
+
+    const barRect = rect || progressBarRef.current?.getBoundingClientRect();
+    const clipDuration = (currentClip.endTime ?? 0) - (currentClip.startTime ?? 0);
+
+    if (!barRect || !barRect.width || clipDuration <= 0) return;
+
+    const offsetX = clientX - barRect.left;
+    const ratio = Math.min(Math.max(offsetX / barRect.width, 0), 1);
+    const targetTime = (currentClip.startTime ?? 0) + ratio * clipDuration;
+    const clampedTime = Math.min(Math.max(targetTime, currentClip.startTime ?? 0), currentClip.endTime ?? targetTime);
+
+    playerRef.current.seekTo(clampedTime);
+    setPlayerProgress(clampedTime);
+  }, [currentClip]);
+
+  const handleProgressBarMouseDown = useCallback((e) => {
+    if (!currentClip || !playerRef.current) return;
+
+    const rect = e.currentTarget?.getBoundingClientRect();
+    if (!rect) return;
+
+    seekWithinClip(e.clientX, rect);
+
+    const handleMove = (moveEvent) => {
+      if (moveEvent.buttons !== 1) {
+        window.removeEventListener('mousemove', handleMove);
+        window.removeEventListener('mouseup', handleUp);
+        return;
+      }
+      seekWithinClip(moveEvent.clientX, rect);
+    };
+
+    const handleUp = () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+  }, [currentClip, seekWithinClip]);
 
   const toggleFavorite = async (e, artist) => {
     e.stopPropagation();
@@ -2101,7 +2145,12 @@ export default function App() {
         </div>
 
         {/* Progress Bar */}
-        <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#333] group cursor-pointer">
+        <div
+          ref={progressBarRef}
+          className="absolute top-0 left-0 right-0 h-[2px] bg-[#333] group cursor-pointer"
+          onClick={(e) => seekWithinClip(e.clientX)}
+          onMouseDown={handleProgressBarMouseDown}
+        >
            <div className="h-full bg-red-600 absolute top-0 left-0" style={{ width: `${Math.min(100, progressPercent)}%` }}></div>
            <div className="absolute top-[-4px] h-[10px] w-full opacity-0 group-hover:opacity-100"></div>
         </div>
