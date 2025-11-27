@@ -525,30 +525,24 @@ export default function App() {
   }, []);
 
   // --- YouTube IFrame API Loader ---
-  const [isYouTubeReady, setIsYouTubeReady] = useState(() => !!(typeof window !== 'undefined' && window.YT));
+  const [isYouTubeApiReady, setIsYouTubeApiReady] = useState(false);
 
   useEffect(() => {
-    // 이미 로드된 경우 즉시 준비 상태로 설정
-    if (window.YT && typeof window.YT.Player === 'function') {
-      setIsYouTubeReady(true);
-      return;
-    }
-
-    const handleReady = () => setIsYouTubeReady(true);
-    window.onYouTubeIframeAPIReady = handleReady;
-
-    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+    // 이미 로드되어 있다면 바로 true 설정
+    if (window.YT && window.YT.Player) {
+      setIsYouTubeApiReady(true);
+    } else {
+      // 로드되지 않았다면 스크립트 추가 및 콜백 설정
       const tag = document.createElement('script');
       tag.src = "https://www.youtube.com/iframe_api";
       const firstScriptTag = document.getElementsByTagName('script')[0];
       firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-    }
 
-    return () => {
-      if (window.onYouTubeIframeAPIReady === handleReady) {
-        delete window.onYouTubeIframeAPIReady;
-      }
-    };
+      // 유튜브 API가 준비되면 실행될 전역 콜백 함수
+      window.onYouTubeIframeAPIReady = () => {
+        setIsYouTubeApiReady(true);
+      };
+    }
   }, []);
 
   // --- Global YouTube Player Initialization (디버깅 로그 추가) ---
@@ -558,8 +552,8 @@ export default function App() {
         console.log("[GlobalPlayer] currentClip이 없습니다. 플레이어 생성을 스킵합니다.");
         return;
     }
-    if (!window.YT) {
-        console.warn("[GlobalPlayer] window.YT가 아직 로드되지 않았습니다. YouTube IFrame API 대기 중...");
+    if (!isYouTubeApiReady || !window.YT) {
+        console.log("[GlobalPlayer] YouTube API 대기 중...");
         return;
     }
 
@@ -631,7 +625,7 @@ export default function App() {
     } catch (err) {
         console.error("[GlobalPlayer] 플레이어 생성 중 예외 발생:", err);
     }
-  }, [currentClip, isLooping, playNext]);
+  }, [currentClip, isYouTubeApiReady, isLooping, playNext]);
 
   // --- Player Logic ---
   const loadClipToPlayer = (clip) => {
