@@ -457,55 +457,32 @@ export default function App() {
       })
       .catch((err) => console.error("아티스트 로딩 실패:", err));
 
-    setVideos([]);
-    setClips([]);
+    fetch('/api/public/library')
+      .then((res) => res.json())
+      .then((data) => {
+        const mappedVideos = data.videos.map((v) => ({
+          ...v,
+          youtubeId: v.youtubeVideoId,
+          duration: v.durationSec,
+        }));
+
+        const mappedClips = data.clips.map((c) => ({
+          ...c,
+          startTime: c.startSec,
+          endTime: c.endSec,
+          youtubeId: c.youtubeVideoId
+        }));
+
+        setVideos(mappedVideos);
+        setClips(mappedClips);
+      })
+      .catch((err) => console.error("라이브러리 로딩 실패:", err));
 
     setSavedPlaylists([]);
 
     setFavorites(new Set());
 
   }, []);
-
-  // 2. 아티스트 선택 시 해당 아티스트의 영상/클립 데이터 불러오기
-  useEffect(() => {
-    if (!selectedArtist) return; // 선택된 아티스트가 없으면 실행하지 않음
-
-    const fetchArtistMedia = async () => {
-      try {
-        // (1) 영상 목록 조회 API 호출
-        const videoRes = await fetch(`/api/videos?artistId=${selectedArtist.id}`);
-        if (videoRes.ok) {
-          const videoData = await videoRes.json();
-          // 백엔드(DB) 컬럼명 -> 프론트엔드 UI 변수명 매핑
-          const mappedVideos = videoData.map((v: any) => ({
-            ...v,
-            youtubeId: v.youtubeVideoId, // UI에서는 youtubeId 사용
-            duration: v.durationSec,     // UI에서는 duration 사용
-            // 필요한 경우 추가 매핑
-          }));
-          setVideos(mappedVideos);
-        }
-
-        // (2) 클립 목록 조회 API 호출
-        const clipRes = await fetch(`/api/clips?artistId=${selectedArtist.id}`);
-        if (clipRes.ok) {
-          const clipData = await clipRes.json();
-          // 백엔드(DB) 컬럼명 -> 프론트엔드 UI 변수명 매핑
-          const mappedClips = clipData.map((c: any) => ({
-            ...c,
-            startTime: c.startSec, // UI에서는 startTime 사용
-            endTime: c.endSec,     // UI에서는 endTime 사용
-            youtubeId: c.youtubeVideoId // 비디오 ID 매핑
-          }));
-          setClips(mappedClips);
-        }
-      } catch (error) {
-        console.error("데이터 로딩 실패:", error);
-      }
-    };
-
-    fetchArtistMedia();
-  }, [selectedArtist]); // selectedArtist가 바뀔 때마다 실행
 
   // --- YouTube IFrame API Loader ---
   useEffect(() => {
