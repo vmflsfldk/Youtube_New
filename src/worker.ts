@@ -38,6 +38,7 @@ interface ArtistResponse {
   availableEn: boolean;
   availableJp: boolean;
   agency?: string | null;
+  chzzkChannelId?: string | null;
   tags: string[];
 }
 
@@ -206,12 +207,14 @@ interface ClipCandidateResponse {
 }
 
 interface LiveBroadcastResponse {
+  platform: "youtube" | "chzzk";
   videoId: string;
   title: string | null;
   thumbnailUrl: string | null;
   url: string | null;
   startedAt: string | null;
   scheduledStartAt: string | null;
+  viewerCount?: number | null;
 }
 
 interface LiveArtistResponse {
@@ -470,6 +473,7 @@ interface ArtistQueryRow {
   available_en: number | null;
   available_jp: number | null;
   agency: string | null;
+  chzzk_channel_id: string | null;
   tags: string | null;
 }
 
@@ -485,6 +489,7 @@ let hasEnsuredArtistUpdatedAtColumn = false;
 let hasEnsuredArtistChannelTitleColumn = false;
 let hasEnsuredArtistCountryColumns = false;
 let hasEnsuredArtistAgencyColumn = false;
+let hasEnsuredArtistChzzkChannelIdColumn = false;
 let hasEnsuredVideoContentTypeColumn = false;
 let hasEnsuredVideoHiddenColumn = false;
 let hasEnsuredVideoCategoryColumn = false;
@@ -923,6 +928,24 @@ async function ensureArtistAgencyColumn(db: D1Database): Promise<void> {
   }
 
   hasEnsuredArtistAgencyColumn = true;
+}
+
+async function ensureArtistChzzkChannelIdColumn(db: D1Database): Promise<void> {
+  if (hasEnsuredArtistChzzkChannelIdColumn) {
+    return;
+  }
+
+  const { results } = await db.prepare("PRAGMA table_info(artists)").all<TableInfoRow>();
+  const hasColumn = (results ?? []).some((column) => column.name?.toLowerCase() === "chzzk_channel_id");
+
+  if (!hasColumn) {
+    const alterResult = await db.prepare("ALTER TABLE artists ADD COLUMN chzzk_channel_id TEXT").run();
+    if (!alterResult.success && !isDuplicateColumnError(alterResult.error)) {
+      throw new Error(alterResult.error ?? "Failed to add chzzk_channel_id column to artists table");
+    }
+  }
+
+  hasEnsuredArtistChzzkChannelIdColumn = true;
 }
 
 async function ensureArtistUpdatedAtColumn(db: D1Database): Promise<void> {
@@ -1655,6 +1678,9 @@ async function createArtist(
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const displayNameRaw = typeof body.displayName === "string" ? body.displayName : "";
   const youtubeChannelId = typeof body.youtubeChannelId === "string" ? body.youtubeChannelId.trim() : "";
+  const chzzkChannelIdRaw = typeof body.chzzkChannelId === "string" ? body.chzzkChannelId : null;
+  const normalizedChzzkChannelId = chzzkChannelIdRaw ? chzzkChannelIdRaw.trim() : "";
+  const chzzkChannelId = normalizedChzzkChannelId.length > 0 ? normalizedChzzkChannelId : null;
   const agencyRaw = typeof body.agency === "string" ? body.agency : null;
   const normalizedAgencyValue = agencyRaw ? agencyRaw.trim() : "";
   const agency = normalizedAgencyValue.length > 0 ? normalizedAgencyValue : null;
@@ -1675,6 +1701,7 @@ async function createArtist(
   await ensureArtistChannelTitleColumn(env.DB);
   await ensureArtistCountryColumns(env.DB);
   await ensureArtistAgencyColumn(env.DB);
+  await ensureArtistChzzkChannelIdColumn(env.DB);
 
   const metadata = await testOverrides.fetchChannelMetadata(env, youtubeChannelId);
   const resolvedChannelId = metadata.channelId?.trim() || youtubeChannelId;
@@ -1694,7 +1721,7 @@ async function createArtist(
   }
 
   const insertResult = await env.DB.prepare(
-    "INSERT INTO artists (name, display_name, youtube_channel_id, youtube_channel_title, available_ko, available_en, available_jp, agency, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO artists (name, display_name, youtube_channel_id, youtube_channel_title, available_ko, available_en, available_jp, agency, chzzk_channel_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   )
     .bind(
       name,
@@ -1705,6 +1732,7 @@ async function createArtist(
       availableEn,
       availableJp,
       agency,
+      chzzkChannelId,
       user.id
     )
     .run();
@@ -1946,6 +1974,7 @@ async function listLiveArtists(env: Env, _user: UserContext, cors: CorsConfig): 
   await ensureArtistChannelTitleColumn(env.DB);
   await ensureArtistCountryColumns(env.DB);
   await ensureArtistAgencyColumn(env.DB);
+  await ensureArtistChzzkChannelIdColumn(env.DB);
 
   const response = await env.DB.prepare(
     `SELECT a.id,
@@ -1958,6 +1987,7 @@ async function listLiveArtists(env: Env, _user: UserContext, cors: CorsConfig): 
             a.available_en,
             a.available_jp,
             a.agency,
+            a.chzzk_channel_id,
             GROUP_CONCAT(at.tag, char(31)) AS tags
        FROM artists a
        LEFT JOIN artist_tags at ON at.artist_id = a.id
@@ -1970,21 +2000,64 @@ async function listLiveArtists(env: Env, _user: UserContext, cors: CorsConfig): 
 
   const liveResults = await Promise.all(
     hydrated.map(async (row) => {
-      const liveVideos = await testOverrides.fetchLiveBroadcastsForChannel(
+      const liveVideos: LiveBroadcastResponse[] = [];
+
+      // YouTube 라이브 확인
+      const youtubeLiveVideos = await testOverrides.fetchLiveBroadcastsForChannel(
         env,
         row.youtube_channel_id,
         null
       );
+      liveVideos.push(...youtubeLiveVideos.map((video) => ({
+        platform: "youtube" as const,
+        videoId: video.videoId,
+        title: video.title,
+        thumbnailUrl: video.thumbnailUrl,
+        url: video.url,
+        startedAt: video.startedAt,
+        scheduledStartAt: video.scheduledStartAt
+      })));
+
+      // 치지직 라이브 확인
+      const chzzkChannelId = row.chzzk_channel_id?.trim();
+      if (chzzkChannelId) {
+        try {
+          const chzzkResponse = await fetch(
+            `https://api.chzzk.naver.com/service/v1/channels/${chzzkChannelId}`,
+            {
+              headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Accept": "application/json, text/plain, */*",
+                "Referer": "https://chzzk.naver.com/"
+              }
+            }
+          );
+
+          if (chzzkResponse.ok) {
+            const chzzkData: any = await chzzkResponse.json();
+            const content = chzzkData.content;
+
+            if (content?.openLive === true) {
+              liveVideos.push({
+                platform: "chzzk",
+                videoId: chzzkChannelId,
+                title: content.liveTitle || null,
+                thumbnailUrl: content.liveImageUrl?.replace('{type}', '1080') || null,
+                url: `https://chzzk.naver.com/live/${chzzkChannelId}`,
+                startedAt: null,
+                scheduledStartAt: null,
+                viewerCount: content.concurrentUserCount || 0
+              });
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to check Chzzk live status for ${chzzkChannelId}:`, error);
+        }
+      }
+
       return {
         artist: toArtistResponse(row),
-        liveVideos: liveVideos.map((video) => ({
-          videoId: video.videoId,
-          title: video.title,
-          thumbnailUrl: video.thumbnailUrl,
-          url: video.url,
-          startedAt: video.startedAt,
-          scheduledStartAt: video.scheduledStartAt
-        }))
+        liveVideos
       } satisfies LiveArtistResponse;
     })
   );
@@ -3690,6 +3763,7 @@ function toArtistResponse(row: ArtistRow): ArtistResponse {
     availableEn: toBooleanFlag(row.available_en),
     availableJp: toBooleanFlag(row.available_jp),
     agency: row.agency ?? null,
+    chzzkChannelId: row.chzzk_channel_id ?? null,
     tags: row.tags ?? []
   };
 }

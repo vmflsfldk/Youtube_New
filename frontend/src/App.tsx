@@ -1639,20 +1639,44 @@ export default function App() {
 
     useEffect(() => {
       const fetchLive = async () => {
+        if (!ensureAuthenticated()) {
+          setIsLoading(false);
+          return;
+        }
+
         setIsLoading(true);
-        const res = await mockCheckLiveStatus(artists);
-        if (res.success) {
-          setLiveStreams(res.data);
+        try {
+          const response = await apiFetch('/api/artists/live', {
+            method: 'GET',
+            headers: buildApiHeaders(user)
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            // API 응답 형식: { artist: {...}, liveVideos: [{platform, videoId, title, ...}] }[]
+            // 플랫폼별로 라이브 스트림을 평탄화
+            const streams = data.flatMap(artistData =>
+              artistData.liveVideos.map(video => ({
+                ...video,
+                artistId: artistData.artist.id,
+                artistName: artistData.artist.displayName || artistData.artist.name,
+                artistImg: artistData.artist.profileImageUrl || 'https://via.placeholder.com/150'
+              }))
+            );
+            setLiveStreams(streams);
+          }
+        } catch (error) {
+          console.error('Failed to fetch live streams:', error);
         }
         setIsLoading(false);
       };
-      
-      if (artists.length > 0) {
+
+      if (user && artists.length > 0) {
         fetchLive();
       } else {
         setIsLoading(false);
       }
-    }, [artists]);
+    }, [user, artists]);
 
     return (
       <div className="p-8 pb-32 min-h-full bg-[#030303] text-white animate-in fade-in duration-300">
@@ -1670,16 +1694,39 @@ export default function App() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {liveStreams.map((stream, idx) => (
               <div key={idx} className="bg-[#181818] rounded-xl overflow-hidden border border-[#333] shadow-2xl">
-                 <div className="aspect-video w-full bg-black">
-                    <iframe 
-                      width="100%" 
-                      height="100%" 
-                      src={`https://www.youtube.com/embed/${stream.liveVideoId}?autoplay=0&controls=1`} 
-                      title={stream.title}
-                      frameBorder="0" 
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                      allowFullScreen
-                    ></iframe>
+                 <div className="aspect-video w-full bg-black relative">
+                    {stream.platform === 'youtube' ? (
+                      <iframe
+                        width="100%"
+                        height="100%"
+                        src={`https://www.youtube.com/embed/${stream.videoId}?autoplay=0&controls=1`}
+                        title={stream.title}
+                        frameBorder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      ></iframe>
+                    ) : (
+                      // 치지직 썸네일
+                      <div
+                        className="w-full h-full cursor-pointer group relative"
+                        onClick={() => window.open(stream.url, '_blank')}
+                      >
+                        <img
+                          src={stream.thumbnailUrl || 'https://via.placeholder.com/1280x720?text=CHZZK+LIVE'}
+                          alt={stream.title}
+                          className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 group-hover:bg-opacity-50 transition-all">
+                          <div className="bg-[#00FFA3] text-black px-6 py-3 rounded-full font-bold text-lg flex items-center gap-2 group-hover:scale-110 transition-transform">
+                            <Play size={24} fill="currentColor" />
+                            치지직에서 시청하기
+                          </div>
+                        </div>
+                        <div className="absolute top-4 right-4 bg-[#00FFA3] text-black text-xs font-bold px-2 py-1 rounded">
+                          CHZZK
+                        </div>
+                      </div>
+                    )}
                  </div>
                  <div className="p-5">
                     <div className="flex items-start gap-4">
@@ -1688,11 +1735,16 @@ export default function App() {
                           <div className="absolute -bottom-1 -right-1 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-[#181818]">LIVE</div>
                        </div>
                        <div className="flex-1 min-w-0">
-                          <h3 className="text-white font-bold text-lg leading-snug mb-1 line-clamp-1">{stream.title}</h3>
+                          <h3 className="text-white font-bold text-lg leading-snug mb-1 line-clamp-1">{stream.title || '제목 없음'}</h3>
                           <p className="text-[#AAAAAA] text-sm mb-3">{stream.artistName}</p>
                           <div className="flex items-center gap-4 text-xs font-medium text-red-500">
-                             <span className="flex items-center gap-1"><User size={12}/> {formatViewers(stream.viewers)}명 시청 중</span>
-                             <span className="flex items-center gap-1"><Signal size={12}/> 실시간 스트리밍</span>
+                             {stream.viewerCount !== undefined && (
+                               <span className="flex items-center gap-1"><User size={12}/> {formatViewers(stream.viewerCount)}명 시청 중</span>
+                             )}
+                             <span className="flex items-center gap-1">
+                               <Signal size={12}/>
+                               {stream.platform === 'youtube' ? 'YouTube Live' : '치지직 Live'}
+                             </span>
                           </div>
                        </div>
                     </div>
@@ -2045,9 +2097,10 @@ export default function App() {
   const AddArtistView = () => {
       const [step, setStep] = useState(1);
       const [channelId, setChannelId] = useState("");
+      const [chzzkChannelId, setChzzkChannelId] = useState("");
       const [isLoading, setIsLoading] = useState(false);
       const [fetchedInfo, setFetchedInfo] = useState(null);
-      
+
       // DB 필드에 맞춘 상태 관리
       const [names, setNames] = useState({ ko: "", en: "", ja: "" });
       const [agency, setAgency] = useState("");
@@ -2113,6 +2166,7 @@ export default function App() {
               name: primaryName,
               displayName: names.ko || primaryName,
               youtubeChannelId: channelId,
+              chzzkChannelId: chzzkChannelId || null,
               availableKo: countries.kr,
               availableEn: countries.en,
               availableJp: countries.jp,
@@ -2135,12 +2189,13 @@ export default function App() {
         // 폼 초기화 및 이동
         setStep(1);
         setChannelId("");
+        setChzzkChannelId("");
         setFetchedInfo(null);
         setNames({ ko: "", en: "", ja: "" });
         setAgency("");
         setTags("");
         setCountries({ kr: false, en: false, jp: false });
-        
+
         setView('artist_list');
       };
 
@@ -2209,21 +2264,36 @@ export default function App() {
                     {/* 소속사 입력 */}
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-[#AAAAAA]">소속사</label>
-                        <input 
-                            value={agency} 
-                            onChange={e => setAgency(e.target.value)} 
-                            placeholder="소속사 입력" 
+                        <input
+                            value={agency}
+                            onChange={e => setAgency(e.target.value)}
+                            placeholder="소속사 입력"
                             className="bg-[#0E0E0E] text-white px-3 py-2 rounded w-full border border-[#333] text-sm focus:border-white outline-none"
                         />
+                    </div>
+
+                    {/* 치지직 채널 ID 입력 */}
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-[#AAAAAA] flex items-center gap-2">
+                          치지직 채널 ID (선택사항)
+                          <span className="text-[10px] bg-[#00FFA3] text-black px-1.5 py-0.5 rounded font-bold">CHZZK</span>
+                        </label>
+                        <input
+                            value={chzzkChannelId}
+                            onChange={e => setChzzkChannelId(e.target.value)}
+                            placeholder="치지직 채널 ID 입력 (예: c1a2b3c4...)"
+                            className="bg-[#0E0E0E] text-white px-3 py-2 rounded w-full border border-[#333] text-sm focus:border-white outline-none"
+                        />
+                        <p className="text-[10px] text-[#666]">라이브 방송 탭에서 치지직 라이브를 확인할 수 있습니다.</p>
                     </div>
 
                     {/* 태그 입력 */}
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-[#AAAAAA]">태그 (쉼표 구분)</label>
-                        <input 
-                            value={tags} 
-                            onChange={e => setTags(e.target.value)} 
-                            placeholder="K-POP, Boy Group, ..." 
+                        <input
+                            value={tags}
+                            onChange={e => setTags(e.target.value)}
+                            placeholder="K-POP, Boy Group, ..."
                             className="bg-[#0E0E0E] text-white px-3 py-2 rounded w-full border border-[#333] text-sm focus:border-white outline-none"
                         />
                     </div>
