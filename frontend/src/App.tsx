@@ -257,7 +257,7 @@ export default function App() {
   const [favorites, setFavorites] = useState(new Set()); 
   const [savedPlaylists, setSavedPlaylists] = useState([]); 
 
-  // Player & Playlist State
+  // Player & Playlist State - localStorage에서 복원
   const [playlist, setPlaylist] = useState(() => {
     try {
       const saved = localStorage.getItem('player_queue');
@@ -277,8 +277,22 @@ export default function App() {
   });
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerProgress, setPlayerProgress] = useState(0);
-  const [isLooping, setIsLooping] = useState(false);
-  const [isVideoVisible, setIsVideoVisible] = useState(false);
+  const [isLooping, setIsLooping] = useState(() => {
+    try {
+      const saved = localStorage.getItem('player_loop');
+      return saved === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+  const [isVideoVisible, setIsVideoVisible] = useState(() => {
+    try {
+      const saved = localStorage.getItem('player_video_visible');
+      return saved === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
   const [isRestoringSession, setIsRestoringSession] = useState(true);
 
   const playerRef = useRef(null);
@@ -289,10 +303,12 @@ export default function App() {
   const googleInitRef = useRef(false);
   const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
+  // 대기열(Queue) localStorage 저장
   useEffect(() => {
     localStorage.setItem('player_queue', JSON.stringify(playlist));
   }, [playlist]);
 
+  // 현재 재생 중인 클립 localStorage 저장
   useEffect(() => {
     if (currentClip) {
       localStorage.setItem('player_current_clip', JSON.stringify(currentClip));
@@ -300,6 +316,16 @@ export default function App() {
       localStorage.removeItem('player_current_clip');
     }
   }, [currentClip]);
+
+  // 루프 설정 localStorage 저장
+  useEffect(() => {
+    localStorage.setItem('player_loop', String(isLooping));
+  }, [isLooping]);
+
+  // 비디오 표시 설정 localStorage 저장
+  useEffect(() => {
+    localStorage.setItem('player_video_visible', String(isVideoVisible));
+  }, [isVideoVisible]);
 
   useEffect(() => {
     const restoreSession = async () => {
