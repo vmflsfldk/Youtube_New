@@ -8,7 +8,7 @@ import {
   ListFilter, BarChart2, Radio, Disc, ListMusic, MoreHorizontal,
   LayoutList, Grid, ArrowUpDown, Globe, Building2, CheckCircle2, AlertCircle,
   Maximize2, Minimize2, Signal, FileVideo, Trash2, FolderPlus, PlayCircle, ListPlus,
-  LogOut // 로그아웃 아이콘
+  LogOut, GripVertical // 로그아웃 아이콘, 드래그 핸들 아이콘
 } from 'lucide-react';
 
 // --- Lightweight Cloudflare D1-style client (in-memory) ---
@@ -928,12 +928,14 @@ export default function App() {
     const [activeTab, setActiveTab] = useState('queue'); // 'queue' or 'playlists'
     const [newPlaylistName, setNewPlaylistName] = useState("");
     const [isCreating, setIsCreating] = useState(false);
+    const [draggedIndex, setDraggedIndex] = useState(null);
+    const [dragOverIndex, setDragOverIndex] = useState(null);
 
     const saveCurrentQueue = async () => {
         if (!ensureAuthenticated()) return;
         const name = prompt("새 플레이리스트 이름을 입력하세요:");
         if (!name) return;
-        
+
         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'playlists'), {
             name,
             items: playlist,
@@ -969,6 +971,52 @@ export default function App() {
 
     const removeFromQueue = (idx) => {
         setPlaylist(prev => prev.filter((_, i) => i !== idx));
+    };
+
+    // 드래그 앤 드롭 핸들러
+    const handleDragStart = (e, index) => {
+        setDraggedIndex(index);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/html', e.currentTarget);
+    };
+
+    const handleDragOver = (e, index) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (draggedIndex !== null && draggedIndex !== index) {
+            setDragOverIndex(index);
+        }
+    };
+
+    const handleDragLeave = (e) => {
+        e.preventDefault();
+        setDragOverIndex(null);
+    };
+
+    const handleDrop = (e, dropIndex) => {
+        e.preventDefault();
+        if (draggedIndex === null || draggedIndex === dropIndex) {
+            setDraggedIndex(null);
+            setDragOverIndex(null);
+            return;
+        }
+
+        const newPlaylist = [...playlist];
+        const draggedItem = newPlaylist[draggedIndex];
+
+        // 드래그된 항목 제거
+        newPlaylist.splice(draggedIndex, 1);
+        // 새 위치에 삽입
+        newPlaylist.splice(dropIndex, 0, draggedItem);
+
+        setPlaylist(newPlaylist);
+        setDraggedIndex(null);
+        setDragOverIndex(null);
+    };
+
+    const handleDragEnd = () => {
+        setDraggedIndex(null);
+        setDragOverIndex(null);
     };
 
     return (
@@ -1024,8 +1072,23 @@ export default function App() {
                         )}
 
                         {playlist.map((track, idx) => (
-                            <div key={`${track.id}-${idx}`} className="group flex justify-between items-center p-2 rounded hover:bg-[#1A1A1A] cursor-pointer">
-                                <div className="flex items-center gap-3 overflow-hidden" onClick={() => setCurrentClip(track)}>
+                            <div
+                                key={`${track.id}-${idx}`}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, idx)}
+                                onDragOver={(e) => handleDragOver(e, idx)}
+                                onDragLeave={handleDragLeave}
+                                onDrop={(e) => handleDrop(e, idx)}
+                                onDragEnd={handleDragEnd}
+                                className={`group flex items-center gap-2 p-2 rounded cursor-move transition-all
+                                    ${draggedIndex === idx ? 'opacity-50 scale-95' : 'opacity-100 scale-100'}
+                                    ${dragOverIndex === idx ? 'bg-[#333] border-2 border-red-500 border-dashed' : 'hover:bg-[#1A1A1A] border-2 border-transparent'}
+                                `}
+                            >
+                                <div className="text-[#666] group-hover:text-[#AAA] flex-shrink-0 cursor-grab active:cursor-grabbing">
+                                    <GripVertical size={14} />
+                                </div>
+                                <div className="flex items-center gap-3 overflow-hidden flex-1" onClick={() => setCurrentClip(track)}>
                                     <div className="w-8 h-8 bg-[#282828] rounded flex items-center justify-center text-[#AAAAAA] flex-shrink-0 group-hover:bg-[#333]">
                                         {currentClip?.id === track.id ? <BarChart2 size={12} className="text-red-500 animate-pulse"/> : <Music size={12}/>}
                                     </div>
@@ -1034,7 +1097,7 @@ export default function App() {
                                         <p className="text-[10px] text-[#888] truncate">{track.artist || track.artistName || 'Unknown'}</p>
                                     </div>
                                 </div>
-                                <button onClick={() => removeFromQueue(idx)} className="opacity-0 group-hover:opacity-100 text-[#666] hover:text-red-500 px-2">
+                                <button onClick={() => removeFromQueue(idx)} className="opacity-0 group-hover:opacity-100 text-[#666] hover:text-red-500 px-2 flex-shrink-0">
                                     <X size={14} />
                                 </button>
                             </div>
