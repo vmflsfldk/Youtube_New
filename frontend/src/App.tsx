@@ -973,6 +973,8 @@ export default function App() {
     const [isCreating, setIsCreating] = useState(false);
     const [draggedIndex, setDraggedIndex] = useState(null);
     const [dragOverIndex, setDragOverIndex] = useState(null);
+    const [liveArtists, setLiveArtists] = useState([]);
+    const [isLoadingLive, setIsLoadingLive] = useState(true);
 
     // 터치 지원 상태
     const [touchStartY, setTouchStartY] = useState(null);
@@ -980,6 +982,39 @@ export default function App() {
     const [isDraggingTouch, setIsDraggingTouch] = useState(false);
     const longPressTimerRef = useRef(null);
     const touchScrollStartRef = useRef(0);
+
+    // 라이브 아티스트 가져오기
+    useEffect(() => {
+      const fetchLiveArtists = async () => {
+        if (!user || !artists.length) {
+          setIsLoadingLive(false);
+          return;
+        }
+
+        setIsLoadingLive(true);
+        try {
+          const response = await apiFetch('/api/artists/live', {
+            method: 'GET',
+            headers: buildApiHeaders(user)
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            // 라이브 중인 아티스트만 필터링
+            const live = data.filter(artistData => artistData.liveVideos.length > 0);
+            setLiveArtists(live);
+          }
+        } catch (error) {
+          console.error('Failed to fetch live artists:', error);
+        }
+        setIsLoadingLive(false);
+      };
+
+      fetchLiveArtists();
+      // 5분마다 업데이트
+      const interval = setInterval(fetchLiveArtists, 5 * 60 * 1000);
+      return () => clearInterval(interval);
+    }, [user, artists]);
 
     const saveCurrentQueue = async () => {
         if (!ensureAuthenticated()) return;
@@ -1159,15 +1194,46 @@ export default function App() {
                     <Radio size={14} className="text-red-500"/> 라이브 중인 아티스트
                 </h3>
                 <div className="space-y-3">
-                {MOCK_LIVE_ARTISTS.slice(0, 2).map(artist => (
-                    <div key={artist.id} className="flex items-center gap-3 group cursor-pointer">
-                    <div className="relative">
-                        <img src={artist.avatar} className="w-8 h-8 rounded-full border-2 border-red-500 p-0.5" alt={artist.name}/>
-                        <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-black"></div>
+                {isLoadingLive ? (
+                    <div className="flex items-center justify-center py-4">
+                        <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
                     </div>
-                    <span className="text-xs font-medium text-white group-hover:underline">{artist.name}</span>
+                ) : liveArtists.length > 0 ? (
+                    liveArtists.slice(0, 3).map(artistData => {
+                        const artist = artistData.artist;
+                        const liveVideo = artistData.liveVideos[0];
+                        const platformColor = liveVideo.platform === 'youtube' ? 'border-red-500 bg-red-500' : 'border-[#00FFA3] bg-[#00FFA3]';
+
+                        return (
+                            <div
+                                key={artist.id}
+                                className="flex items-center gap-3 group cursor-pointer hover:bg-[#1A1A1A] p-2 rounded-lg transition-colors"
+                                onClick={() => setView('live')}
+                            >
+                                <div className="relative">
+                                    <img
+                                        src={artist.profileImageUrl || 'https://via.placeholder.com/40'}
+                                        className={`w-10 h-10 rounded-full border-2 ${platformColor} p-0.5`}
+                                        alt={artist.displayName || artist.name}
+                                    />
+                                    <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 ${platformColor} rounded-full border-2 border-black animate-pulse`}></div>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-bold text-white group-hover:text-red-400 truncate transition-colors">
+                                        {artist.displayName || artist.name}
+                                    </p>
+                                    <p className="text-[10px] text-[#666] truncate">
+                                        {liveVideo.platform === 'youtube' ? '🔴 YouTube' : '🟢 치지직'} · {liveVideo.viewerCount ? `${formatViewers(liveVideo.viewerCount)}명` : 'LIVE'}
+                                    </p>
+                                </div>
+                            </div>
+                        );
+                    })
+                ) : (
+                    <div className="text-center text-[#555] py-4 text-xs">
+                        현재 라이브 중인 아티스트가 없습니다
                     </div>
-                ))}
+                )}
                 </div>
             </div>
 
