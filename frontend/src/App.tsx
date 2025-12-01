@@ -1045,21 +1045,20 @@ export default function App() {
 
     const handleDrop = (e, dropIndex) => {
         e.preventDefault();
-        if (draggedIndex === null || draggedIndex === dropIndex) {
-            setDraggedIndex(null);
-            setDragOverIndex(null);
-            return;
-        }
+        setPlaylist((prev) => {
+            if (draggedIndex === null || draggedIndex === dropIndex) {
+                return prev;
+            }
 
-        const newPlaylist = [...playlist];
-        const draggedItem = newPlaylist[draggedIndex];
+            const updated = [...prev];
+            const [draggedItem] = updated.splice(draggedIndex, 1);
 
-        // 드래그된 항목 제거
-        newPlaylist.splice(draggedIndex, 1);
-        // 새 위치에 삽입
-        newPlaylist.splice(dropIndex, 0, draggedItem);
+            // 아래쪽으로 이동할 때는 목표 인덱스가 하나 줄어듦
+            const targetIndex = draggedIndex < dropIndex ? dropIndex - 1 : dropIndex;
+            updated.splice(targetIndex, 0, draggedItem);
+            return updated;
+        });
 
-        setPlaylist(newPlaylist);
         setDraggedIndex(null);
         setDragOverIndex(null);
     };
@@ -1120,14 +1119,13 @@ export default function App() {
         clearTimeout(longPressTimerRef.current);
 
         if (isDraggingTouch && draggedIndex !== null && dragOverIndex !== null && draggedIndex !== dragOverIndex) {
-            // 드롭 처리
-            const newPlaylist = [...playlist];
-            const draggedItem = newPlaylist[draggedIndex];
-
-            newPlaylist.splice(draggedIndex, 1);
-            newPlaylist.splice(dragOverIndex, 0, draggedItem);
-
-            setPlaylist(newPlaylist);
+            setPlaylist((prev) => {
+                const updated = [...prev];
+                const [draggedItem] = updated.splice(draggedIndex, 1);
+                const targetIndex = draggedIndex < dragOverIndex ? dragOverIndex - 1 : dragOverIndex;
+                updated.splice(targetIndex, 0, draggedItem);
+                return updated;
+            });
 
             // 햅틱 피드백
             if (navigator.vibrate) {
