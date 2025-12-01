@@ -931,6 +931,13 @@ export default function App() {
     const [draggedIndex, setDraggedIndex] = useState(null);
     const [dragOverIndex, setDragOverIndex] = useState(null);
 
+    // 터치 지원 상태
+    const [touchStartY, setTouchStartY] = useState(null);
+    const [touchCurrentY, setTouchCurrentY] = useState(null);
+    const [isDraggingTouch, setIsDraggingTouch] = useState(false);
+    const longPressTimerRef = useRef(null);
+    const touchScrollStartRef = useRef(0);
+
     const saveCurrentQueue = async () => {
         if (!ensureAuthenticated()) return;
         const name = prompt("새 플레이리스트 이름을 입력하세요:");
@@ -1019,6 +1026,89 @@ export default function App() {
         setDragOverIndex(null);
     };
 
+    // 터치 이벤트 핸들러
+    const handleTouchStart = (e, index) => {
+        const touch = e.touches[0];
+        setTouchStartY(touch.clientY);
+        setTouchCurrentY(touch.clientY);
+
+        // 길게 누르기 타이머 시작 (500ms)
+        longPressTimerRef.current = setTimeout(() => {
+            setDraggedIndex(index);
+            setIsDraggingTouch(true);
+            // 햅틱 피드백 (지원하는 경우)
+            if (navigator.vibrate) {
+                navigator.vibrate(50);
+            }
+        }, 500);
+    };
+
+    const handleTouchMove = (e, index) => {
+        if (!isDraggingTouch) {
+            // 드래그 시작 전이면 스크롤 허용을 위해 타이머 취소
+            const touch = e.touches[0];
+            const deltaY = Math.abs(touch.clientY - touchStartY);
+            if (deltaY > 10) {
+                clearTimeout(longPressTimerRef.current);
+            }
+            return;
+        }
+
+        // 드래그 중이면 스크롤 방지
+        e.preventDefault();
+
+        const touch = e.touches[0];
+        setTouchCurrentY(touch.clientY);
+
+        // 터치 위치에 따라 dragOverIndex 업데이트
+        const element = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (element) {
+            const trackElement = element.closest('[data-track-index]');
+            if (trackElement) {
+                const overIndex = parseInt(trackElement.dataset.trackIndex);
+                if (overIndex !== draggedIndex) {
+                    setDragOverIndex(overIndex);
+                }
+            }
+        }
+    };
+
+    const handleTouchEnd = (e, index) => {
+        clearTimeout(longPressTimerRef.current);
+
+        if (isDraggingTouch && draggedIndex !== null && dragOverIndex !== null && draggedIndex !== dragOverIndex) {
+            // 드롭 처리
+            const newPlaylist = [...playlist];
+            const draggedItem = newPlaylist[draggedIndex];
+
+            newPlaylist.splice(draggedIndex, 1);
+            newPlaylist.splice(dragOverIndex, 0, draggedItem);
+
+            setPlaylist(newPlaylist);
+
+            // 햅틱 피드백
+            if (navigator.vibrate) {
+                navigator.vibrate(30);
+            }
+        }
+
+        // 상태 초기화
+        setDraggedIndex(null);
+        setDragOverIndex(null);
+        setIsDraggingTouch(false);
+        setTouchStartY(null);
+        setTouchCurrentY(null);
+    };
+
+    const handleTouchCancel = () => {
+        clearTimeout(longPressTimerRef.current);
+        setDraggedIndex(null);
+        setDragOverIndex(null);
+        setIsDraggingTouch(false);
+        setTouchStartY(null);
+        setTouchCurrentY(null);
+    };
+
     return (
         <div className="w-80 bg-[#030303] h-full hidden lg:flex flex-col border-l border-[#282828] pt-6 pb-24 z-20">
             <div className="px-6 mb-6">
@@ -1074,30 +1164,44 @@ export default function App() {
                         {playlist.map((track, idx) => (
                             <div
                                 key={`${track.id}-${idx}`}
+                                data-track-index={idx}
                                 draggable
                                 onDragStart={(e) => handleDragStart(e, idx)}
                                 onDragOver={(e) => handleDragOver(e, idx)}
                                 onDragLeave={handleDragLeave}
                                 onDrop={(e) => handleDrop(e, idx)}
                                 onDragEnd={handleDragEnd}
-                                className={`group flex items-center gap-2 p-2 rounded cursor-move transition-all
-                                    ${draggedIndex === idx ? 'opacity-50 scale-95' : 'opacity-100 scale-100'}
+                                onTouchStart={(e) => handleTouchStart(e, idx)}
+                                onTouchMove={(e) => handleTouchMove(e, idx)}
+                                onTouchEnd={(e) => handleTouchEnd(e, idx)}
+                                onTouchCancel={handleTouchCancel}
+                                style={{
+                                    transition: draggedIndex === null ? 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)' : 'opacity 0.2s, transform 0.2s',
+                                    transform: draggedIndex === idx && isDraggingTouch && touchCurrentY !== null
+                                        ? `translateY(${touchCurrentY - touchStartY}px) scale(1.05)`
+                                        : draggedIndex === idx
+                                        ? 'scale(0.95)'
+                                        : 'scale(1)',
+                                }}
+                                className={`group flex items-center gap-2 p-2 rounded cursor-move
+                                    ${draggedIndex === idx ? 'opacity-50 shadow-2xl z-50' : 'opacity-100'}
                                     ${dragOverIndex === idx ? 'bg-[#333] border-2 border-red-500 border-dashed' : 'hover:bg-[#1A1A1A] border-2 border-transparent'}
+                                    ${isDraggingTouch && draggedIndex === idx ? 'bg-[#1A1A1A] shadow-lg' : ''}
                                 `}
                             >
-                                <div className="text-[#666] group-hover:text-[#AAA] flex-shrink-0 cursor-grab active:cursor-grabbing">
+                                <div className="text-[#666] group-hover:text-[#AAA] flex-shrink-0 cursor-grab active:cursor-grabbing touch-none">
                                     <GripVertical size={14} />
                                 </div>
                                 <div className="flex items-center gap-3 overflow-hidden flex-1" onClick={() => setCurrentClip(track)}>
-                                    <div className="w-8 h-8 bg-[#282828] rounded flex items-center justify-center text-[#AAAAAA] flex-shrink-0 group-hover:bg-[#333]">
+                                    <div className="w-8 h-8 bg-[#282828] rounded flex items-center justify-center text-[#AAAAAA] flex-shrink-0 group-hover:bg-[#333] transition-colors duration-200">
                                         {currentClip?.id === track.id ? <BarChart2 size={12} className="text-red-500 animate-pulse"/> : <Music size={12}/>}
                                     </div>
                                     <div className="min-w-0">
-                                        <p className={`text-xs truncate font-medium ${currentClip?.id === track.id ? 'text-red-500' : 'text-[#E1E1E1]'}`}>{track.title}</p>
+                                        <p className={`text-xs truncate font-medium transition-colors duration-200 ${currentClip?.id === track.id ? 'text-red-500' : 'text-[#E1E1E1]'}`}>{track.title}</p>
                                         <p className="text-[10px] text-[#888] truncate">{track.artist || track.artistName || 'Unknown'}</p>
                                     </div>
                                 </div>
-                                <button onClick={() => removeFromQueue(idx)} className="opacity-0 group-hover:opacity-100 text-[#666] hover:text-red-500 px-2 flex-shrink-0">
+                                <button onClick={() => removeFromQueue(idx)} className="opacity-0 group-hover:opacity-100 text-[#666] hover:text-red-500 px-2 flex-shrink-0 transition-all duration-200">
                                     <X size={14} />
                                 </button>
                             </div>
