@@ -8,7 +8,7 @@ import {
   ListFilter, BarChart2, Radio, Disc, ListMusic, MoreHorizontal,
   LayoutList, Grid, ArrowUpDown, Globe, Building2, CheckCircle2, AlertCircle,
   Maximize2, Minimize2, Signal, FileVideo, Trash2, FolderPlus, PlayCircle, ListPlus,
-  LogOut, GripVertical // 로그아웃 아이콘, 드래그 핸들 아이콘
+  LogOut, GripVertical, Pencil // 로그아웃, 드래그 핸들, 편집 아이콘
 } from 'lucide-react';
 
 // --- Lightweight Cloudflare D1-style client (in-memory) ---
@@ -248,7 +248,8 @@ export default function App() {
   
   // Selection State
   const [selectedArtist, setSelectedArtist] = useState(null);
-  const [selectedVideo, setSelectedVideo] = useState(null); 
+  const [selectedVideo, setSelectedVideo] = useState(null);
+  const [selectedClip, setSelectedClip] = useState(null); 
   
   // Data State
   const [artists, setArtists] = useState([]);
@@ -817,6 +818,48 @@ export default function App() {
     } else {
       await addDoc(favRef, { artistId: artist.id, createdAt: serverTimestamp() });
     }
+  };
+
+  const deleteClip = async (e, clip) => {
+    e.stopPropagation();
+    if (!ensureAuthenticated()) return;
+    if (!window.confirm(`"${clip.title}" 클립을 삭제하시겠습니까?`)) return;
+
+    try {
+      // 로컬 DB에서 삭제
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'clips', clip.id));
+
+      // API에서 삭제 (d1Id가 있는 경우)
+      if (clip.d1Id) {
+        const apiResponse = await apiFetch(`/api/clips/${clip.d1Id}`, {
+          method: 'DELETE',
+          headers: buildApiHeaders(user)
+        });
+
+        if (!apiResponse.ok) {
+          console.warn('API clip deletion failed', await apiResponse.text());
+        }
+      }
+
+      // 로컬 상태에서 제거
+      setClips(prev => prev.filter(c => c.id !== clip.id));
+      alert('클립이 삭제되었습니다.');
+    } catch (error) {
+      console.error('Clip deletion error:', error);
+      alert('클립 삭제 중 오류가 발생했습니다.');
+    }
+  };
+
+  const editClip = (e, clip) => {
+    e.stopPropagation();
+    const parentVideo = videos.find(v => v.id === clip.videoId);
+    if (!parentVideo) {
+      alert('원본 영상을 찾을 수 없습니다.');
+      return;
+    }
+    setSelectedVideo(parentVideo);
+    setSelectedClip(clip);
+    setView('clip_editor');
   };
 
 
@@ -1845,7 +1888,7 @@ export default function App() {
                   {artistClips.map(clip => {
                      const parentVideo = videos.find(v => v.id === clip.videoId);
                      return (
-                        <div key={clip.id} onClick={() => loadClipToPlayer({...clip, youtubeId: parentVideo?.youtubeId, artistName: selectedArtist.primaryName})} className="flex gap-4 p-3 rounded-lg bg-[#181818] hover:bg-[#222] group cursor-pointer transition-colors border border-transparent hover:border-[#333]">
+                        <div key={clip.id} onClick={() => loadClipToPlayer({...clip, youtubeId: parentVideo?.youtubeId, artistName: selectedArtist.primaryName})} className="flex gap-3 p-3 rounded-lg bg-[#181818] hover:bg-[#222] group cursor-pointer transition-colors border border-transparent hover:border-[#333]">
                            <div className="relative w-24 h-16 flex-shrink-0 rounded overflow-hidden bg-black">
                               <img src={parentVideo?.thumbnailUrl} className="w-full h-full object-cover opacity-70 group-hover:opacity-100"/>
                               <div className="absolute inset-0 flex items-center justify-center"><Play size={20} fill="white" className="opacity-80"/></div>
@@ -1857,12 +1900,29 @@ export default function App() {
                                  {clip.tags?.[0] && <span className="bg-[#333] px-1 rounded text-[10px] text-[#999]">#{clip.tags[0]}</span>}
                               </div>
                            </div>
-                           <button 
-                              onClick={(e) => addToQueue(e, clip, false)}
-                              className="self-center p-2 text-[#444] hover:text-white opacity-0 group-hover:opacity-100 transition-all"
-                           >
-                              <ListPlus size={16}/>
-                           </button>
+                           <div className="flex flex-col gap-1 self-center opacity-0 group-hover:opacity-100 transition-all">
+                              <button
+                                 onClick={(e) => editClip(e, clip)}
+                                 className="p-1.5 text-[#666] hover:text-blue-400 hover:bg-[#282828] rounded transition-all"
+                                 title="클립 수정"
+                              >
+                                 <Pencil size={14}/>
+                              </button>
+                              <button
+                                 onClick={(e) => addToQueue(e, clip, false)}
+                                 className="p-1.5 text-[#666] hover:text-green-400 hover:bg-[#282828] rounded transition-all"
+                                 title="대기열 추가"
+                              >
+                                 <ListPlus size={14}/>
+                              </button>
+                              <button
+                                 onClick={(e) => deleteClip(e, clip)}
+                                 className="p-1.5 text-[#666] hover:text-red-400 hover:bg-[#282828] rounded transition-all"
+                                 title="클립 삭제"
+                              >
+                                 <Trash2 size={14}/>
+                              </button>
+                           </div>
                         </div>
                      );
                   })}
@@ -2260,26 +2320,46 @@ export default function App() {
     const [tags, setTags] = useState("");
     const [recommendations, setRecommendations] = useState([]);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const isEditMode = !!selectedClip;
 
     useEffect(() => {
       if (!window.YT || !selectedVideo) return;
 
-      // 등록 화면에서 넘어온 suggestions가 있다면 초기값으로 사용
-      if (selectedVideo.suggestions && selectedVideo.suggestions.length > 0) {
-        setRecommendations(selectedVideo.suggestions);
+      // 수정 모드일 때 기존 클립 데이터 로드
+      if (selectedClip) {
+        setStartTime(selectedClip.startTime || 0);
+        setEndTime(selectedClip.endTime || 15);
+        setClipTitle(selectedClip.title || "");
+        setTags(selectedClip.tags?.join(', ') || "");
       } else {
-        // suggestions가 없으면 초기화 (이전 비디오 데이터 잔존 방지)
-        setRecommendations([]);
+        // 생성 모드: 등록 화면에서 넘어온 suggestions가 있다면 초기값으로 사용
+        if (selectedVideo.suggestions && selectedVideo.suggestions.length > 0) {
+          setRecommendations(selectedVideo.suggestions);
+        } else {
+          setRecommendations([]);
+        }
       }
+
       const newPlayer = new window.YT.Player('editor-player', {
         height: '100%', width: '100%', videoId: selectedVideo.youtubeId,
         playerVars: { 'autoplay': 1, 'controls': 1 },
         events: {
-          'onReady': (event) => { setEditorPlayer(event.target); const d = event.target.getDuration(); setDuration(d); setEndTime(Math.min(d, 15)); }
+          'onReady': (event) => {
+            setEditorPlayer(event.target);
+            const d = event.target.getDuration();
+            setDuration(d);
+            if (!selectedClip) {
+              setEndTime(Math.min(d, 15));
+            }
+            // 수정 모드일 때 시작 시간으로 이동
+            if (selectedClip) {
+              event.target.seekTo(selectedClip.startTime || 0);
+            }
+          }
         }
       });
       return () => { if(newPlayer.destroy) newPlayer.destroy(); }
-    }, [selectedVideo]);
+    }, [selectedVideo, selectedClip]);
 
     const runAutoRecommendation = async () => {
       if (!selectedVideo?.id) return;
@@ -2326,48 +2406,97 @@ export default function App() {
       if (!ensureAuthenticated()) return;
       if (!clipTitle) return alert("제목을 입력해주세요.");
       if (startTime >= endTime) return alert("종료 시간은 시작 시간보다 뒤여야 합니다.");
-      const isDuplicate = clips.some(c => c.videoId === selectedVideo.id && Math.abs(c.startTime - startTime) < 1 && Math.abs(c.endTime - endTime) < 1);
-      if (isDuplicate) return alert("이미 동일한 구간의 클립이 존재합니다.");
+
       const tagArray = tags.split(',').map(t => t.trim()).filter(t => t);
-      const docRef = await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'clips'), {
-        videoId: selectedVideo.id, youtubeId: selectedVideo.youtubeId, title: clipTitle, startTime, endTime, tags: tagArray, createdAt: serverTimestamp()
-      });
-      try {
-        const videoD1Id = Number(selectedVideo?.d1Id ?? selectedVideo?.id);
-        if (Number.isFinite(videoD1Id)) {
-          const apiResponse = await apiFetch('/api/clips', {
-            method: 'POST',
-            headers: buildApiHeaders(user),
-            body: JSON.stringify({
-              videoId: videoD1Id,
-              title: clipTitle,
-              startSec: startTime,
-              endSec: endTime,
-              tags: tagArray
-            })
+
+      if (isEditMode) {
+        // 수정 모드
+        try {
+          // 로컬 DB 업데이트
+          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'clips', selectedClip.id), {
+            title: clipTitle,
+            startTime,
+            endTime,
+            tags: tagArray
           });
-          if (apiResponse.ok) {
-            const payload = await apiResponse.json();
-            await updateDoc(doc(collection(db, 'artifacts', appId, 'users', user.uid, 'clips'), docRef.id), {
-              d1Id: payload.id
+
+          // API 업데이트 (d1Id가 있는 경우)
+          if (selectedClip.d1Id) {
+            const apiResponse = await apiFetch(`/api/clips/${selectedClip.d1Id}`, {
+              method: 'PUT',
+              headers: buildApiHeaders(user),
+              body: JSON.stringify({
+                title: clipTitle,
+                startSec: startTime,
+                endSec: endTime,
+                tags: tagArray
+              })
             });
-          } else {
-            console.warn('API clip sync failed', await apiResponse.text());
+
+            if (!apiResponse.ok) {
+              console.warn('API clip update failed', await apiResponse.text());
+            }
           }
-        } else {
-          console.warn('API clip sync skipped: missing video D1 id');
+
+          // 로컬 상태 업데이트
+          setClips(prev => prev.map(c => c.id === selectedClip.id
+            ? { ...c, title: clipTitle, startTime, endTime, tags: tagArray }
+            : c
+          ));
+
+          alert("클립이 수정되었습니다.");
+          setSelectedClip(null);
+          setView('artist_detail');
+        } catch (error) {
+          console.error('Clip update error:', error);
+          alert('클립 수정 중 오류가 발생했습니다.');
         }
-      } catch (error) {
-        console.error('API clip sync error', error);
+      } else {
+        // 생성 모드
+        const isDuplicate = clips.some(c => c.videoId === selectedVideo.id && Math.abs(c.startTime - startTime) < 1 && Math.abs(c.endTime - endTime) < 1);
+        if (isDuplicate) return alert("이미 동일한 구간의 클립이 존재합니다.");
+
+        const docRef = await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'clips'), {
+          videoId: selectedVideo.id, youtubeId: selectedVideo.youtubeId, title: clipTitle, startTime, endTime, tags: tagArray, createdAt: serverTimestamp()
+        });
+        try {
+          const videoD1Id = Number(selectedVideo?.d1Id ?? selectedVideo?.id);
+          if (Number.isFinite(videoD1Id)) {
+            const apiResponse = await apiFetch('/api/clips', {
+              method: 'POST',
+              headers: buildApiHeaders(user),
+              body: JSON.stringify({
+                videoId: videoD1Id,
+                title: clipTitle,
+                startSec: startTime,
+                endSec: endTime,
+                tags: tagArray
+              })
+            });
+            if (apiResponse.ok) {
+              const payload = await apiResponse.json();
+              await updateDoc(doc(collection(db, 'artifacts', appId, 'users', user.uid, 'clips'), docRef.id), {
+                d1Id: payload.id
+              });
+            } else {
+              console.warn('API clip sync failed', await apiResponse.text());
+            }
+          } else {
+            console.warn('API clip sync skipped: missing video D1 id');
+          }
+        } catch (error) {
+          console.error('API clip sync error', error);
+        }
+        alert("클립이 저장되었습니다.");
+        setView('artist_detail');
       }
-      alert("클립이 저장되었습니다."); setView('artist_detail');
     };
 
     return (
       <div className="h-full flex flex-col p-6 bg-[#030303]">
         <div className="flex items-center gap-4 mb-6 text-[#AAAAAA]">
           <button onClick={() => setView('artist_detail')} className="hover:text-white"><SkipBack/></button>
-          <span className="text-white font-bold text-lg">클립 에디터</span>
+          <span className="text-white font-bold text-lg">{isEditMode ? '클립 수정' : '클립 에디터'}</span>
           <span className="text-sm">/</span>
           <span className="text-sm truncate max-w-md">{selectedVideo.title}</span>
         </div>
@@ -2402,7 +2531,9 @@ export default function App() {
              <div className="bg-[#181818] p-4 rounded-lg border border-[#282828] space-y-4">
                 <input value={clipTitle} onChange={e => setClipTitle(e.target.value)} placeholder="클립 제목" className="w-full bg-[#030303] text-white px-3 py-2 rounded border border-[#333] focus:border-white focus:outline-none text-sm"/>
                 <input value={tags} onChange={e => setTags(e.target.value)} placeholder="#태그1, #태그2" className="w-full bg-[#030303] text-white px-3 py-2 rounded border border-[#333] focus:border-white focus:outline-none text-sm"/>
-                <button onClick={saveClip} className="w-full bg-white text-black font-bold py-2 rounded hover:bg-[#F1F1F1] text-sm">저장하기</button>
+                <button onClick={saveClip} className="w-full bg-white text-black font-bold py-2 rounded hover:bg-[#F1F1F1] text-sm">
+                  {isEditMode ? '수정 완료' : '저장하기'}
+                </button>
              </div>
           </div>
         </div>
