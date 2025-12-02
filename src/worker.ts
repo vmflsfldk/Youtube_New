@@ -3074,6 +3074,23 @@ async function listPlaylists(env: Env, user: UserContext, cors: CorsConfig): Pro
   return jsonResponse(playlists, 200, cors);
 }
 
+const resolvePlaylistTitle = (body: any): string => {
+  const raw =
+    (typeof body.title === "string" && body.title.trim().length > 0
+      ? body.title
+      : typeof body.name === "string"
+        ? body.name
+        : "") ?? "";
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    throw new HttpError(400, "title is required");
+  }
+  if (trimmed.length > 200) {
+    throw new HttpError(400, "title must be 200 characters or fewer");
+  }
+  return trimmed;
+};
+
 async function createPlaylist(
   request: Request,
   env: Env,
@@ -3081,13 +3098,7 @@ async function createPlaylist(
   cors: CorsConfig
 ): Promise<Response> {
   const body = await readJson(request);
-  const rawTitle = typeof body.title === "string" ? body.title.trim() : "";
-  if (!rawTitle) {
-    throw new HttpError(400, "title is required");
-  }
-  if (rawTitle.length > 200) {
-    throw new HttpError(400, "title must be 200 characters or fewer");
-  }
+  const rawTitle = resolvePlaylistTitle(body);
 
   const visibility = normalizePlaylistVisibility(body.visibility);
 
@@ -5717,5 +5728,6 @@ export {
   listArtists as __listArtistsForTests,
   listLiveArtists as __listLiveArtistsForTests,
   fetchVideoSectionsFromComments as __fetchVideoSectionsFromCommentsForTests,
-  extractSectionsFromText as __extractSectionsFromTextForTests
+  extractSectionsFromText as __extractSectionsFromTextForTests,
+  resolvePlaylistTitle as __resolvePlaylistTitleForTests
 };
