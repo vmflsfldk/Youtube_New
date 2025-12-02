@@ -296,6 +296,7 @@ export default function App() {
   });
   const [isMobileQueueOpen, setIsMobileQueueOpen] = useState(false);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
+  const [toastMessage, setToastMessage] = useState(null);
 
   const playerRef = useRef(null);
   const playerIntervalRef = useRef(null);
@@ -699,14 +700,14 @@ export default function App() {
   const addToQueue = (e, item, isVideo = false) => {
     e.stopPropagation();
     let newItem = { ...item };
-    
+
     if (isVideo) {
         let artistName = item.artistName;
         if (!artistName) {
             const artist = artists.find(a => a.id === item.artistId);
             artistName = artist ? (artist.primaryName || artist.name) : 'Unknown';
         }
-        
+
         newItem = {
             id: item.id,
             videoId: item.id,
@@ -721,15 +722,19 @@ export default function App() {
     } else {
         const video = videos.find(v => v.id === item.videoId);
         const artist = artists.find(a => a.id === video?.artistId);
-        
+
         newItem = {
             ...item,
             artist: artist ? (artist.primaryName || artist.name) : 'Unknown',
             duration: item.endTime - item.startTime
         };
     }
-    
+
     setPlaylist(prev => [...prev, newItem]);
+
+    // 토스트 메시지 표시
+    setToastMessage(`재생목록에 추가: ${newItem.title}`);
+    setTimeout(() => setToastMessage(null), 2000);
   };
 
   useEffect(() => {
@@ -1666,17 +1671,24 @@ export default function App() {
             const video = videos.find(v => v.id === clip.videoId);
             const artist = artists.find(a => a.id === video?.artistId);
             return (
-              <div 
-                key={clip.id} 
-                onClick={() => loadClipToPlayer({ ...clip, youtubeId: video?.youtubeId, artistName: artist?.primaryName })}
+              <div
+                key={clip.id}
+                onClick={(e) => addToQueue(e, clip, false)}
                 className="flex items-center gap-4 p-3 pr-4 rounded-xl bg-[#181818] hover:bg-[#282828] group cursor-pointer transition-all border border-transparent hover:border-[#333]"
               >
-                <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-neutral-800 shadow-lg">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    loadClipToPlayer({ ...clip, youtubeId: video?.youtubeId, artistName: artist?.primaryName });
+                  }}
+                  className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-neutral-800 shadow-lg hover:scale-105 transition-transform"
+                  title="즉시 재생"
+                >
                   <img src={video?.thumbnailUrl} alt="" className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-transparent">
-                     <Play size={20} fill="white" className="text-white opacity-80 group-hover:opacity-100"/>
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 hover:bg-black/20 transition-colors">
+                     <Play size={24} fill="white" className="text-white drop-shadow-lg"/>
                   </div>
-                </div>
+                </button>
                 <div className="flex-1 min-w-0">
                   <h4 className="text-white font-bold text-sm truncate mb-1">{clip.title}</h4>
                   <div className="flex items-center gap-2 text-xs text-[#AAAAAA]">
@@ -1693,13 +1705,9 @@ export default function App() {
                       </div>
                   )}
                 </div>
-                <button 
-                    onClick={(e) => addToQueue(e, clip, false)}
-                    className="text-[#666] hover:text-white p-2 rounded-full hover:bg-[#333] transition-colors opacity-0 group-hover:opacity-100"
-                    title="대기열 추가"
-                >
-                    <ListPlus size={18}/>
-                </button>
+                <div className="text-[#666] group-hover:text-white transition-colors">
+                  <ListPlus size={18}/>
+                </div>
               </div>
             );
           })}
@@ -2021,11 +2029,20 @@ export default function App() {
                   {artistClips.map(clip => {
                      const parentVideo = videos.find(v => v.id === clip.videoId);
                      return (
-                        <div key={clip.id} onClick={() => loadClipToPlayer({...clip, youtubeId: parentVideo?.youtubeId, artistName: selectedArtist.primaryName})} className="flex gap-3 p-3 rounded-lg bg-[#181818] hover:bg-[#222] group cursor-pointer transition-colors border border-transparent hover:border-[#333]">
-                           <div className="relative w-24 h-16 flex-shrink-0 rounded overflow-hidden bg-black">
+                        <div key={clip.id} onClick={(e) => addToQueue(e, clip, false)} className="flex gap-3 p-3 rounded-lg bg-[#181818] hover:bg-[#222] group cursor-pointer transition-colors border border-transparent hover:border-[#333]">
+                           <button
+                              onClick={(e) => {
+                                 e.stopPropagation();
+                                 loadClipToPlayer({...clip, youtubeId: parentVideo?.youtubeId, artistName: selectedArtist.primaryName});
+                              }}
+                              className="relative w-24 h-16 flex-shrink-0 rounded overflow-hidden bg-black hover:scale-105 transition-transform"
+                              title="즉시 재생"
+                           >
                               <img src={parentVideo?.thumbnailUrl} className="w-full h-full object-cover opacity-70 group-hover:opacity-100"/>
-                              <div className="absolute inset-0 flex items-center justify-center"><Play size={20} fill="white" className="opacity-80"/></div>
-                           </div>
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/40 hover:bg-black/20 transition-colors">
+                                 <Play size={24} fill="white" className="text-white drop-shadow-lg"/>
+                              </div>
+                           </button>
                            <div className="flex-1 min-w-0 flex flex-col justify-center">
                               <h4 className="text-white font-bold text-sm truncate mb-1 group-hover:text-red-400 transition-colors">{clip.title}</h4>
                               <div className="flex items-center gap-2 text-xs text-[#666]">
@@ -2042,7 +2059,10 @@ export default function App() {
                                  <Pencil size={14}/>
                               </button>
                               <button
-                                 onClick={(e) => addToQueue(e, clip, false)}
+                                 onClick={(e) => {
+                                    e.stopPropagation();
+                                    addToQueue(e, clip, false);
+                                 }}
                                  className="p-1.5 text-[#666] hover:text-green-400 hover:bg-[#282828] rounded transition-all"
                                  title="대기열 추가"
                               >
@@ -2911,6 +2931,14 @@ export default function App() {
               </button>
           )}
       </div>
+
+      {/* 토스트 메시지 */}
+      {toastMessage && (
+        <div className="fixed bottom-32 md:bottom-24 left-1/2 -translate-x-1/2 z-[70] bg-[#1DB954] text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-4 fade-in duration-300">
+          <ListPlus size={18} />
+          <span className="font-medium text-sm">{toastMessage}</span>
+        </div>
+      )}
 
       <BottomPlayer />
       <MobileNav />
