@@ -1198,8 +1198,11 @@ export default function App() {
             {/* Mobile-only header with close button */}
             <div className="lg:hidden flex items-center justify-between px-6 py-4 border-b border-[#282828]">
                 <h3 className="text-white font-bold text-lg">재생 대기열</h3>
-                <button onClick={() => setIsMobileQueueOpen(false)} className="text-[#AAAAAA] hover:text-white">
-                    <ChevronRight size={24} />
+                <button
+                    onClick={() => setIsMobileQueueOpen(false)}
+                    className="text-white hover:text-red-500 active:scale-90 transition-all p-2 -m-2"
+                >
+                    <X size={28} />
                 </button>
             </div>
 
