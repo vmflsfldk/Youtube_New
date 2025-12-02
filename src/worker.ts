@@ -3989,6 +3989,7 @@ interface YouTubeSnippet {
   thumbnails?: YouTubeThumbnails;
   publishedAt?: string;
   description?: string;
+  liveBroadcastContent?: string; // "live" | "upcoming" | "none"
 }
 
 interface YouTubeContentDetails {
@@ -5044,6 +5045,8 @@ async function fetchLiveBroadcastsForChannel(
     }
   }
 
+  console.log(`[yt-clip] Channel ${trimmedChannelId}: Found ${videoIds.length} video(s) from live search`);
+
   if (videoIds.length === 0) {
     if (debug) {
       debug.liveVideoCount = 0;
@@ -5100,6 +5103,14 @@ async function fetchLiveBroadcastsForChannel(
   for (const videoId of videoIds) {
     const snippet = snippetByVideo.get(videoId) ?? null;
     const details = detailsByVideo.get(videoId) ?? null;
+
+    // 실제로 라이브 중인 방송만 포함 (upcoming/scheduled 제외)
+    const liveBroadcastContent = details?.snippet?.liveBroadcastContent ?? snippet?.liveBroadcastContent;
+    if (liveBroadcastContent !== "live") {
+      console.log(`[yt-clip] Skipping video ${videoId}: liveBroadcastContent=${liveBroadcastContent} (not actively live)`);
+      continue;
+    }
+
     const liveDetails = details?.liveStreamingDetails;
     const actualStartTime = normalizeTimestamp(liveDetails?.actualStartTime);
     const scheduledStartTime = normalizeTimestamp(liveDetails?.scheduledStartTime);
@@ -5134,6 +5145,8 @@ async function fetchLiveBroadcastsForChannel(
     }
     return 0;
   });
+
+  console.log(`[yt-clip] Channel ${trimmedChannelId}: ${results.length} actively live broadcast(s) after filtering`);
 
   if (debug) {
     debug.liveVideoCount = results.length;
