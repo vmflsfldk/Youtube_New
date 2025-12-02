@@ -1061,7 +1061,26 @@ export default function App() {
     };
 
     const removeFromQueue = (idx) => {
-        setPlaylist(prev => prev.filter((_, i) => i !== idx));
+        const trackToRemove = playlist[idx];
+        const newPlaylist = playlist.filter((_, i) => i !== idx);
+
+        setPlaylist(newPlaylist);
+
+        // 현재 재생 중인 곡을 삭제하는 경우
+        if (currentClip && trackToRemove.id === currentClip.id) {
+            if (newPlaylist.length > 0) {
+                // 다음 곡이 있으면 다음 곡 재생
+                const nextIndex = idx >= newPlaylist.length ? 0 : idx;
+                setCurrentClip(newPlaylist[nextIndex]);
+            } else {
+                // 재생목록이 비었으면 재생 중지
+                setCurrentClip(null);
+                setIsPlaying(false);
+                if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
+                    playerRef.current.stopVideo();
+                }
+            }
+        }
     };
 
     // 드래그 앤 드롭 핸들러
@@ -1281,7 +1300,14 @@ export default function App() {
                             <button onClick={saveCurrentQueue} className="flex-1 bg-[#222] hover:bg-[#333] text-white text-xs py-2 rounded flex items-center justify-center gap-1">
                                 <Save size={12}/> 저장
                             </button>
-                            <button onClick={() => setPlaylist([])} className="flex-1 bg-[#222] hover:bg-[#333] text-[#AAAAAA] hover:text-red-500 text-xs py-2 rounded flex items-center justify-center gap-1">
+                            <button onClick={() => {
+                                setPlaylist([]);
+                                setCurrentClip(null);
+                                setIsPlaying(false);
+                                if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
+                                    playerRef.current.stopVideo();
+                                }
+                            }} className="flex-1 bg-[#222] hover:bg-[#333] text-[#AAAAAA] hover:text-red-500 text-xs py-2 rounded flex items-center justify-center gap-1">
                                 <Trash2 size={12}/> 비우기
                             </button>
                         </div>
