@@ -160,6 +160,25 @@ const fetchChannelInfo = async (channelId) => {
       };
     }
 
+    // 채널 ID는 있지만 정보가 없는 경우 (API 403 등)
+    if (data.channelId && !data.title) {
+      console.warn('⚠️ 채널 ID는 있지만 상세 정보를 가져올 수 없습니다.');
+      console.warn('→ API 상태:', data.debug?.apiStatus);
+      console.warn('→ 수동 입력 모드로 진행합니다.');
+      return {
+        success: true,
+        manualMode: true,
+        data: {
+          title: null,
+          description: "",
+          thumbnailUrl: null,
+          subscriberCount: "알 수 없음",
+          channelId: data.channelId
+        },
+        debug: data.debug
+      };
+    }
+
     return {
       success: true,
       data: {
@@ -2330,8 +2349,15 @@ export default function App() {
          setIsLoading(false);
          if (res.success) {
             setFetchedInfo(res.data);
-            // 채널 제목을 기본적으로 한국어 이름으로 설정 (필요시 변경 가능)
-            setNames(prev => ({ ...prev, ko: res.data.title }));
+            // 수동 입력 모드: 채널 제목이 없으면 사용자가 입력해야 함
+            if (res.manualMode) {
+               alert(`⚠️ 채널 ID는 확인되었으나 상세 정보를 가져올 수 없습니다.\n(API 상태: ${res.debug?.apiStatus})\n\n아티스트 이름을 직접 입력해주세요.`);
+               // 채널 ID만 설정하고, 이름은 비워둠
+               setNames({ ko: "", en: "", ja: "" });
+            } else {
+               // 채널 제목을 기본적으로 한국어 이름으로 설정 (필요시 변경 가능)
+               setNames(prev => ({ ...prev, ko: res.data.title }));
+            }
             setStep(2);
          } else {
             // 더 자세한 에러 메시지
@@ -2448,14 +2474,33 @@ export default function App() {
 
              {step === 2 && fetchedInfo && (
                 <form onSubmit={handleSubmit} className="w-full max-w-md space-y-6 bg-[#181818] p-6 rounded-xl border border-[#333]">
-                    <div className="flex items-center gap-4 pb-4 border-b border-[#333]">
-                        <img src={fetchedInfo.thumbnailUrl} className="w-16 h-16 rounded-full" alt=""/>
-                        <div>
-                            <h3 className="text-white font-bold">{fetchedInfo.title}</h3>
-                            <p className="text-xs text-[#AAAAAA]">{fetchedInfo.subscriberCount} Subscribers</p>
-                        </div>
-                        <CheckCircle2 className="text-green-500 ml-auto" />
-                    </div>
+                    {/* 채널 정보 표시 */}
+                    {fetchedInfo.title ? (
+                      // 정상 모드: 채널 정보 가져오기 성공
+                      <div className="flex items-center gap-4 pb-4 border-b border-[#333]">
+                          <img src={fetchedInfo.thumbnailUrl} className="w-16 h-16 rounded-full" alt=""/>
+                          <div>
+                              <h3 className="text-white font-bold">{fetchedInfo.title}</h3>
+                              <p className="text-xs text-[#AAAAAA]">{fetchedInfo.subscriberCount} Subscribers</p>
+                          </div>
+                          <CheckCircle2 className="text-green-500 ml-auto" />
+                      </div>
+                    ) : (
+                      // 수동 입력 모드: 채널 ID만 있음
+                      <div className="flex items-center gap-4 pb-4 border-b border-[#333]">
+                          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-2xl font-bold">
+                            ?
+                          </div>
+                          <div className="flex-1">
+                              <h3 className="text-white font-bold flex items-center gap-2">
+                                채널 ID 확인됨
+                                <AlertCircle className="text-yellow-500" size={16} />
+                              </h3>
+                              <p className="text-xs text-[#AAAAAA]">채널: {fetchedInfo.channelId?.slice(0, 12)}...</p>
+                              <p className="text-xs text-yellow-500 mt-1">⚠️ 아티스트 이름을 직접 입력하세요</p>
+                          </div>
+                      </div>
+                    )}
 
                     {/* 활동 국가 체크박스 */}
                     <div className="space-y-2">
