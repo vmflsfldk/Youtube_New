@@ -287,6 +287,8 @@ interface ChannelMetadataDebug {
   liveFetchStatus: number | null;
   liveVideoCount: number;
   liveFetchError: string | null;
+  liveFallbackSearchUsed: boolean;
+  liveFallbackStatus: number | null;
 }
 
 interface ChannelMetadata {
@@ -4682,7 +4684,9 @@ async function fetchChannelMetadata(env: Env, channelId: string): Promise<Channe
     liveFetchAttempted: false,
     liveFetchStatus: null,
     liveVideoCount: 0,
-    liveFetchError: null
+    liveFetchError: null,
+    liveFallbackSearchUsed: false,
+    liveFallbackStatus: null
   };
 
   if (!trimmedChannelId) {
@@ -5043,15 +5047,63 @@ async function fetchLiveBroadcastsForChannel(
   const searchItems = Array.isArray(searchPayload.items) ? searchPayload.items : [];
   const videoIds: string[] = [];
   const snippetByVideo = new Map<string, YouTubeSnippet>();
-  for (const item of searchItems) {
-    const rawVideoId = item?.id?.videoId;
-    const videoId = typeof rawVideoId === "string" ? rawVideoId.trim() : "";
-    if (!videoId || videoIds.includes(videoId)) {
-      continue;
+
+  const collectSearchResults = (items: YouTubeSearchItem[], requireLiveFlag: boolean) => {
+    for (const item of items) {
+      const rawVideoId = item?.id?.videoId;
+      const videoId = typeof rawVideoId === "string" ? rawVideoId.trim() : "";
+      if (!videoId || videoIds.includes(videoId)) {
+        continue;
+      }
+
+      const snippet = item?.snippet;
+      if (requireLiveFlag && snippet?.liveBroadcastContent !== "live") {
+        continue;
+      }
+
+      videoIds.push(videoId);
+      if (snippet) {
+        snippetByVideo.set(videoId, snippet);
+      }
     }
-    videoIds.push(videoId);
-    if (item?.snippet) {
-      snippetByVideo.set(videoId, item.snippet);
+  };
+
+  collectSearchResults(searchItems, false);
+
+  if (videoIds.length === 0) {
+    const fallbackUrl = new URL("https://www.googleapis.com/youtube/v3/search");
+    fallbackUrl.searchParams.set("part", "snippet");
+    fallbackUrl.searchParams.set("channelId", trimmedChannelId);
+    fallbackUrl.searchParams.set("type", "video");
+    fallbackUrl.searchParams.set("order", "date");
+    fallbackUrl.searchParams.set("maxResults", "10");
+    fallbackUrl.searchParams.set("key", apiKey);
+
+    if (debug) {
+      debug.liveFallbackSearchUsed = true;
+    }
+
+    try {
+      const fallbackResponse = await fetch(fallbackUrl.toString(), { method: "GET" });
+
+      if (debug) {
+        debug.liveFallbackStatus = fallbackResponse.status;
+      }
+
+      if (fallbackResponse.ok) {
+        const fallbackPayload = (await fallbackResponse.json()) as YouTubeSearchResponse;
+        const fallbackItems = Array.isArray(fallbackPayload.items) ? fallbackPayload.items : [];
+        collectSearchResults(fallbackItems, true);
+      } else {
+        console.warn(
+          `[yt-clip] YouTube Data API responded with status ${fallbackResponse.status} during live fallback search for channel ${trimmedChannelId}`
+        );
+      }
+    } catch (error) {
+      console.warn(
+        `[yt-clip] Failed to contact YouTube Data API during live fallback search for channel ${trimmedChannelId}`,
+        error
+      );
     }
   }
 
