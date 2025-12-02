@@ -1712,12 +1712,6 @@ export default function App() {
         <span className="text-white font-bold text-xl tracking-tighter">Music</span>
       </div>
 
-      <div className="flex gap-2 mb-4">
-        <button className="px-3 py-1.5 rounded-lg bg-white text-black text-sm font-bold">홈</button>
-        <button className="px-3 py-1.5 rounded-lg bg-[#282828] hover:bg-[#3E3E3E] text-white text-sm font-bold transition-colors">뮤직</button>
-        <button className="px-3 py-1.5 rounded-lg bg-[#282828] hover:bg-[#3E3E3E] text-white text-sm font-bold transition-colors">팟캐스트</button>
-      </div>
-
       <section>
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-white flex items-center gap-2">
