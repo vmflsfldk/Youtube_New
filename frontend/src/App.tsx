@@ -2691,7 +2691,7 @@ export default function App() {
           console.log("[BottomPlayer] 현재 곡 없음. 대기열 확인:", playlist.length);
           if (playlist.length > 0) {
               setCurrentClip(playlist[0]);
-              setIsPlaying(true);
+              // setIsPlaying은 onReady에서 자동으로 설정됨
           } else {
               alert("재생할 곡이 없습니다. 영상을 대기열에 추가해주세요.");
           }
@@ -2700,7 +2700,15 @@ export default function App() {
 
       // 2. 플레이어 객체 확인
       if (!playerRef.current) {
-          console.error("[BottomPlayer] playerRef.current가 없음 (플레이어 미초기화)");
+          console.warn("[BottomPlayer] playerRef.current가 없음 (플레이어 미초기화). 잠시 후 재시도...");
+          // 플레이어가 초기화될 때까지 짧은 지연 후 재시도
+          setTimeout(() => {
+              if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+                  console.log("[BottomPlayer] 재시도: 플레이어 준비됨, 재생 시작");
+                  playerRef.current.playVideo();
+                  setIsPlaying(true);
+              }
+          }, 500);
           return;
       }
 
@@ -2713,7 +2721,7 @@ export default function App() {
       try {
           const playerState = playerRef.current.getPlayerState();
           console.log("[BottomPlayer] 현재 플레이어 상태(API):", playerState);
-          
+
           if (playerState === 1 || playerState === 3) { // 재생중(1) or 버퍼링(3)
               console.log("[BottomPlayer] 일시정지 명령 전송 (pauseVideo)");
               playerRef.current.pauseVideo();
