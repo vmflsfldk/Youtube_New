@@ -4153,6 +4153,103 @@ function sanitizeOptionalText(value: unknown): string | null {
   return trimmed.slice(0, 255);
 }
 
+// YouTube API Cache Types and TTL (in seconds)
+type CacheType =
+  | "video_metadata"
+  | "channel_metadata"
+  | "video_sections_api"
+  | "video_sections_comments"
+  | "live_broadcasts"
+  | "channel_uploads"
+  | "channel_search";
+
+const CACHE_TTL: Record<CacheType, number> = {
+  video_metadata: 86400,           // 24 hours - video info rarely changes
+  channel_metadata: 86400,          // 24 hours - channel info rarely changes
+  video_sections_api: 86400,        // 24 hours - chapters never change
+  video_sections_comments: 3600,    // 1 hour - comments may be added but timestamps are stable
+  live_broadcasts: 300,             // 5 minutes - live status changes frequently
+  channel_uploads: 3600,            // 1 hour - new videos may be uploaded
+  channel_search: 86400             // 24 hours - channel handle mappings don't change
+};
+
+function generateCacheKey(type: CacheType, params: Record<string, string>): string {
+  const sortedParams = Object.keys(params)
+    .sort()
+    .map(key => `${key}=${params[key]}`)
+    .join("&");
+  return `${type}:${sortedParams}`;
+}
+
+async function getCachedResponse<T>(
+  env: Env,
+  type: CacheType,
+  params: Record<string, string>
+): Promise<T | null> {
+  try {
+    const cacheKey = generateCacheKey(type, params);
+    const now = new Date().toISOString();
+
+    const result = await env.DB.prepare(`
+      SELECT response_data
+      FROM youtube_api_cache
+      WHERE cache_key = ? AND expires_at > ?
+    `)
+      .bind(cacheKey, now)
+      .first<{ response_data: string }>();
+
+    if (!result) {
+      return null;
+    }
+
+    return JSON.parse(result.response_data) as T;
+  } catch (error) {
+    console.warn("[yt-cache] Failed to get cached response", error);
+    return null;
+  }
+}
+
+async function setCachedResponse<T>(
+  env: Env,
+  type: CacheType,
+  params: Record<string, string>,
+  data: T
+): Promise<void> {
+  try {
+    const cacheKey = generateCacheKey(type, params);
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + CACHE_TTL[type] * 1000).toISOString();
+    const responseData = JSON.stringify(data);
+
+    await env.DB.prepare(`
+      INSERT INTO youtube_api_cache (cache_key, cache_type, response_data, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(cache_key) DO UPDATE SET
+        response_data = excluded.response_data,
+        created_at = excluded.created_at,
+        expires_at = excluded.expires_at
+    `)
+      .bind(cacheKey, type, responseData, now.toISOString(), expiresAt)
+      .run();
+  } catch (error) {
+    console.warn("[yt-cache] Failed to set cached response", error);
+  }
+}
+
+async function cleanExpiredCache(env: Env): Promise<void> {
+  try {
+    const now = new Date().toISOString();
+    await env.DB.prepare(`
+      DELETE FROM youtube_api_cache
+      WHERE expires_at <= ?
+    `)
+      .bind(now)
+      .run();
+  } catch (error) {
+    console.warn("[yt-cache] Failed to clean expired cache", error);
+  }
+}
+
 async function fetchVideoMetadata(env: Env, videoId: string): Promise<{
   title: string;
   durationSec: number | null;
@@ -4172,6 +4269,12 @@ async function fetchVideoMetadata(env: Env, videoId: string): Promise<{
   if (!apiKey) {
     warnMissingYouTubeApiKey();
     return fallback;
+  }
+
+  // Check cache first
+  const cached = await getCachedResponse<typeof fallback>(env, "video_metadata", { videoId });
+  if (cached) {
+    return cached;
   }
 
   const url = new URL("https://www.googleapis.com/youtube/v3/videos");
@@ -4217,13 +4320,18 @@ async function fetchVideoMetadata(env: Env, videoId: string): Promise<{
 
   const description = sanitizeMultilineText(snippet?.description);
 
-  return {
+  const result = {
     title,
     durationSec,
     thumbnailUrl,
     channelId,
     description
   };
+
+  // Cache the result
+  await setCachedResponse(env, "video_metadata", { videoId }, result);
+
+  return result;
 }
 
 async function fetchVideoSectionsFromApi(
@@ -4235,6 +4343,12 @@ async function fetchVideoSectionsFromApi(
   if (!apiKey) {
     warnMissingYouTubeApiKey();
     return [];
+  }
+
+  // Check cache first
+  const cached = await getCachedResponse<VideoSectionResponse[]>(env, "video_sections_api", { videoId });
+  if (cached) {
+    return cached;
   }
 
   const url = new URL("https://www.googleapis.com/youtube/v3/videos");
@@ -4266,6 +4380,8 @@ async function fetchVideoSectionsFromApi(
   const item = Array.isArray(payload.items) ? (payload.items[0] as YouTubeVideoItemWithChapters | undefined) : undefined;
   const chapters = item?.chapters?.chapters;
   if (!Array.isArray(chapters) || chapters.length === 0) {
+    // Cache empty result to avoid repeated API calls
+    await setCachedResponse(env, "video_sections_api", { videoId }, []);
     return [];
   }
 
@@ -4291,6 +4407,9 @@ async function fetchVideoSectionsFromApi(
     sections.push({ title, startSec: start, endSec: end, source: "YOUTUBE_CHAPTER" });
   }
 
+  // Cache the result
+  await setCachedResponse(env, "video_sections_api", { videoId }, sections);
+
   return sections;
 }
 
@@ -4303,6 +4422,12 @@ async function fetchVideoSectionsFromComments(
   if (!apiKey) {
     warnMissingYouTubeApiKey();
     return [];
+  }
+
+  // Check cache first
+  const cached = await getCachedResponse<VideoSectionResponse[]>(env, "video_sections_comments", { videoId });
+  if (cached) {
+    return cached;
   }
 
   const MAX_RESULTS_PER_PAGE = 100;
@@ -4352,6 +4477,8 @@ async function fetchVideoSectionsFromComments(
       }
       const sections = extractSectionsFromText(text, durationSec, "COMMENT");
       if (sections.length >= 2) {
+        // Cache the result before returning
+        await setCachedResponse(env, "video_sections_comments", { videoId }, sections);
         return sections;
       }
     }
@@ -4363,6 +4490,8 @@ async function fetchVideoSectionsFromComments(
     pageToken = nextToken;
   }
 
+  // Cache empty result to avoid repeated API calls
+  await setCachedResponse(env, "video_sections_comments", { videoId }, []);
   return [];
 }
 
@@ -4694,6 +4823,12 @@ async function fetchChannelMetadata(env: Env, channelId: string): Promise<Channe
     return { title: null, profileImageUrl: null, channelId: null, debug: baseDebug };
   }
 
+  // Check cache first (cache by trimmed input to handle various channel ID formats)
+  const cached = await getCachedResponse<Omit<ChannelMetadata, 'debug'>>(env, "channel_metadata", { channelId: trimmedChannelId });
+  if (cached) {
+    return { ...cached, debug: baseDebug };
+  }
+
   const identifier = parseYouTubeChannelIdentifier(trimmedChannelId);
   baseDebug.identifier = identifier;
 
@@ -4745,7 +4880,7 @@ async function fetchChannelMetadata(env: Env, channelId: string): Promise<Channe
 
   let searchSnippet: YouTubeSnippet | null = null;
   if (!effectiveChannelId && identifier.handle) {
-    const searchResult = await searchChannelByHandle(apiKey, identifier.handle);
+    const searchResult = await searchChannelByHandle(apiKey, identifier.handle, env);
     if (searchResult) {
       effectiveChannelId = searchResult.channelId ?? effectiveChannelId;
       if (searchResult.snippet) {
@@ -4949,7 +5084,15 @@ async function fetchChannelMetadata(env: Env, channelId: string): Promise<Channe
   baseDebug.usedApi = true;
   baseDebug.resolvedChannelId = resolvedChannelId;
 
-  return { title, profileImageUrl, channelId: resolvedChannelId, debug: baseDebug };
+  const result = { title, profileImageUrl, channelId: resolvedChannelId, debug: baseDebug };
+
+  // Cache the result (excluding debug info to reduce cache size)
+  if (baseDebug.usedApi) {
+    const cacheData = { title, profileImageUrl, channelId: resolvedChannelId };
+    await setCachedResponse(env, "channel_metadata", { channelId: trimmedChannelId }, cacheData);
+  }
+
+  return result;
 }
 
 async function fetchLiveBroadcastsForChannel(
@@ -4970,6 +5113,15 @@ async function fetchLiveBroadcastsForChannel(
       debug.liveFetchError = "channelId missing";
     }
     return [];
+  }
+
+  // Check cache first (5 minute TTL for live broadcasts)
+  const cached = await getCachedResponse<LiveBroadcastVideo[]>(env, "live_broadcasts", { channelId: trimmedChannelId });
+  if (cached) {
+    if (debug) {
+      debug.liveVideoCount = cached.length;
+    }
+    return cached;
   }
 
   const apiKey = env.YOUTUBE_API_KEY?.trim();
@@ -5220,6 +5372,9 @@ async function fetchLiveBroadcastsForChannel(
     debug.liveFetchError = null;
   }
 
+  // Cache the result (5 minute TTL for live broadcasts)
+  await setCachedResponse(env, "live_broadcasts", { channelId: trimmedChannelId }, results);
+
   return results;
 }
 
@@ -5349,9 +5504,23 @@ function sanitizeSnippetTitle(snippet: YouTubeSnippet | null): string | null {
 
 async function searchChannelByHandle(
   apiKey: string,
-  handle: string
+  handle: string,
+  env?: Env
 ): Promise<{ channelId: string | null; snippet: YouTubeSnippet | null } | null> {
   const normalizedHandle = handle.startsWith("@") ? handle : `@${handle}`;
+
+  // Check cache first if env is provided
+  if (env) {
+    const cached = await getCachedResponse<{ channelId: string | null; snippet: YouTubeSnippet | null }>(
+      env,
+      "channel_search",
+      { handle: normalizedHandle }
+    );
+    if (cached) {
+      return cached;
+    }
+  }
+
   const url = new URL("https://www.googleapis.com/youtube/v3/search");
   url.searchParams.set("part", "snippet");
   url.searchParams.set("type", "channel");
@@ -5375,7 +5544,15 @@ async function searchChannelByHandle(
     if (!resolvedChannelId && !snippet) {
       return null;
     }
-    return { channelId: resolvedChannelId, snippet };
+
+    const result = { channelId: resolvedChannelId, snippet };
+
+    // Cache the result if env is provided
+    if (env) {
+      await setCachedResponse(env, "channel_search", { handle: normalizedHandle }, result);
+    }
+
+    return result;
   } catch (error) {
     console.warn(`[yt-clip] Failed to resolve channel handle ${handle} via search API`, error);
     return null;
