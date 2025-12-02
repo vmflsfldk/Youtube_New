@@ -1611,11 +1611,13 @@ export default function App() {
   };
 
   const HomeView = () => {
-    const latestVideos = useMemo(() => [...videos].sort((a, b) => {
-      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return timeB - timeA;
-    }).slice(0, 8), [videos]);
+    const latestVideos = useMemo(() => [...videos]
+      .filter(video => !video.duration || video.duration < 3600) // 1시간(3600초) 미만 영상만 표시
+      .sort((a, b) => {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return timeB - timeA;
+      }).slice(0, 8), [videos]);
     const latestClips = useMemo(() => [...clips].sort((a, b) => {
       const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
