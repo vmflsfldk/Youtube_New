@@ -127,21 +127,52 @@ const fetchChannelInfo = async (channelId) => {
   try {
     const response = await apiFetch(endpoint);
     if (!response.ok) {
-      return { success: false, error: `status_${response.status}` };
+      const errorText = await response.text();
+      console.error(`채널 정보 가져오기 실패 (${response.status}):`, errorText);
+      return {
+        success: false,
+        error: `status_${response.status}`,
+        details: errorText
+      };
     }
     const data = await response.json();
+
+    // 디버그 정보 로깅
+    console.log('채널 정보 응답:', data);
+    if (data.debug) {
+      console.log('디버그 정보:', {
+        입력: data.debug.input,
+        식별자: data.debug.identifier,
+        해결된_채널ID: data.debug.resolvedChannelId,
+        경고: data.debug.warnings,
+        HTML_시도: data.debug.attemptedHtml,
+        API_시도: data.debug.attemptedApi,
+        API_상태: data.debug.apiStatus
+      });
+    }
+
+    if (!data.title && !data.channelId) {
+      console.warn('채널 정보를 찾을 수 없습니다. 디버그:', data.debug);
+      return {
+        success: false,
+        error: 'no_channel_found',
+        debug: data.debug
+      };
+    }
+
     return {
       success: true,
       data: {
         title: data.title || "채널 정보 없음",
         description: "",
         thumbnailUrl: data.profileImageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${channelId}`,
-        subscriberCount: formatSubscriberCount(data.subscriberCount)
+        subscriberCount: formatSubscriberCount(data.subscriberCount),
+        channelId: data.channelId
       }
     };
   } catch (error) {
     console.error("채널 정보를 불러오지 못했습니다.", error);
-    return { success: false, error: "network_error" };
+    return { success: false, error: "network_error", details: error.message };
   }
 };
 
@@ -2301,7 +2332,14 @@ export default function App() {
             setNames(prev => ({ ...prev, ko: res.data.title }));
             setStep(2);
          } else {
-            alert("채널을 찾을 수 없습니다.");
+            // 더 자세한 에러 메시지
+            let errorMessage = "채널을 찾을 수 없습니다.";
+            if (res.error === 'no_channel_found') {
+               errorMessage = "채널 정보를 가져올 수 없습니다.\n\n입력 형식:\n- 채널 ID: UC로 시작 (예: UCxxxxx...)\n- URL: https://www.youtube.com/@handle\n- 핸들: @handle\n\n브라우저 콘솔(F12)에서 디버그 정보를 확인하세요.";
+            } else if (res.details) {
+               errorMessage += `\n\n오류: ${res.details}`;
+            }
+            alert(errorMessage);
          }
       };
 
@@ -2387,13 +2425,16 @@ export default function App() {
                 <div className="w-full max-w-md space-y-4">
                     <div className="relative">
                        <Search className="absolute left-3 top-3.5 text-[#AAAAAA]" size={18}/>
-                       <input 
-                            value={channelId} 
-                            onChange={e => setChannelId(e.target.value)} 
-                            placeholder="YouTube Channel ID (e.g. UC...)" 
-                            className="bg-[#181818] text-white pl-10 pr-4 py-3 rounded-lg w-full border border-[#333] focus:border-red-500 outline-none transition-colors"
+                       <input
+                            value={channelId}
+                            onChange={e => setChannelId(e.target.value)}
+                            placeholder="채널 ID, URL 또는 @핸들 (예: @VioletaMone_Projecti)"
+                            className="bg-[#181818] text-white pl-10 pr-4 py-3 rounded-lg w-full border border-[#333] focus:border-red-500 outline-none transition-colors text-sm"
                         />
                     </div>
+                    <p className="text-xs text-[#666] -mt-2">
+                       예시: UCxxxxx... 또는 https://www.youtube.com/@handle 또는 @handle
+                    </p>
                     <div className="flex gap-2 pt-2">
                         <button onClick={() => setView('artist_list')} className="flex-1 py-3 text-[#AAAAAA] hover:text-white">취소</button>
                         <button onClick={handleFetch} disabled={isLoading || !channelId} className="flex-1 bg-white text-black font-bold rounded-lg hover:bg-[#F1F1F1] disabled:opacity-50 flex items-center justify-center gap-2">
