@@ -1299,7 +1299,7 @@ export default function App() {
                                 <div className="text-[#666] group-hover:text-[#AAA] flex-shrink-0 cursor-grab active:cursor-grabbing touch-none">
                                     <GripVertical size={14} />
                                 </div>
-                                <div className="flex items-center gap-3 overflow-hidden flex-1" onClick={() => setCurrentClip(track)}>
+                                <div className="flex items-center gap-3 overflow-hidden flex-1" onClick={(e) => { e.stopPropagation(); setCurrentClip(track); }}>
                                     <div className="w-8 h-8 bg-[#282828] rounded flex items-center justify-center text-[#AAAAAA] flex-shrink-0 group-hover:bg-[#333] transition-colors duration-200">
                                         {currentClip?.id === track.id ? <BarChart2 size={12} className="text-red-500 animate-pulse"/> : <Music size={12}/>}
                                     </div>
@@ -1308,7 +1308,7 @@ export default function App() {
                                         <p className="text-[10px] text-[#888] truncate">{track.artist || track.artistName || 'Unknown'}</p>
                                     </div>
                                 </div>
-                                <button onClick={() => removeFromQueue(idx)} className="opacity-0 group-hover:opacity-100 text-[#666] hover:text-red-500 px-2 flex-shrink-0 transition-all duration-200">
+                                <button onClick={(e) => { e.stopPropagation(); removeFromQueue(idx); }} className="opacity-0 group-hover:opacity-100 text-[#666] hover:text-red-500 px-2 flex-shrink-0 transition-all duration-200">
                                     <X size={14} />
                                 </button>
                             </div>
@@ -2757,14 +2757,14 @@ export default function App() {
 
         {/* 재생 컨트롤 */}
         <div className="flex items-center gap-3 md:gap-4 text-white mr-4">
-           <button onClick={playPrev} className="p-2 active:scale-90 transition-transform text-[#AAA] hover:text-white"><SkipBack size={20} fill="currentColor"/></button>
-           
+           <button onClick={(e) => { e.stopPropagation(); playPrev(); }} className="p-2 active:scale-90 transition-transform text-[#AAA] hover:text-white"><SkipBack size={20} fill="currentColor"/></button>
+
            <button onClick={togglePlay} className="p-2 -m-2 active:scale-90 transition-transform">
               {isPlaying ? <Pause size={28} fill="currentColor"/> : <Play size={28} fill="currentColor"/>}
            </button>
-           
-           <button onClick={playNext} className="p-2 active:scale-90 transition-transform text-[#AAA] hover:text-white"><SkipForward size={20} fill="currentColor"/></button>
-           
+
+           <button onClick={(e) => { e.stopPropagation(); playNext(); }} className="p-2 active:scale-90 transition-transform text-[#AAA] hover:text-white"><SkipForward size={20} fill="currentColor"/></button>
+
            <div className="text-xs text-[#AAAAAA] ml-2 font-mono hidden md:block w-20">
               {formatTime(currentProgress)} / {formatTime(duration)}
            </div>
@@ -2776,8 +2776,15 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4 text-[#AAAAAA]">
-             <button className={`hover:text-white ${isLooping ? 'text-red-500' : ''}`} onClick={() => setIsLooping(!isLooping)}><Repeat size={20}/></button>
-             <button className="hover:text-white hidden md:block"><ListMusic size={20}/></button>
+             <button
+               className={`hover:text-white ${isLooping ? 'text-red-500' : ''}`}
+               onClick={(e) => { e.stopPropagation(); setIsLooping(!isLooping); }}
+             >
+               <Repeat size={20}/>
+             </button>
+             <button className="hover:text-white hidden md:block" onClick={(e) => e.stopPropagation()}>
+               <ListMusic size={20}/>
+             </button>
         </div>
       </div>
     );
