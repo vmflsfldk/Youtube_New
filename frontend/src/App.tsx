@@ -115,6 +115,24 @@ const formatSubscriberCount = (raw) => {
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 
+const formatApiStatus = (debug) => {
+  if (!debug) return "알 수 없음";
+
+  if (Array.isArray(debug.warnings) && debug.warnings.includes("YOUTUBE_API_KEY missing")) {
+    return "API 키 미설정";
+  }
+
+  if (typeof debug.apiStatus === "number") {
+    return `HTTP ${debug.apiStatus}`;
+  }
+
+  if (debug.attemptedApi) {
+    return "요청 실패";
+  }
+
+  return "요청 안 함";
+};
+
 const buildApiUrl = (path) => {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return API_BASE_URL ? `${API_BASE_URL}${normalizedPath}` : normalizedPath;
@@ -147,7 +165,7 @@ const fetchChannelInfo = async (channelId) => {
         경고: data.debug.warnings,
         HTML_시도: data.debug.attemptedHtml,
         API_시도: data.debug.attemptedApi,
-        API_상태: data.debug.apiStatus
+        API_상태: formatApiStatus(data.debug)
       });
     }
 
@@ -163,7 +181,7 @@ const fetchChannelInfo = async (channelId) => {
     // 채널 ID는 있지만 정보가 없는 경우 (API 403 등)
     if (data.channelId && !data.title) {
       console.warn('⚠️ 채널 ID는 있지만 상세 정보를 가져올 수 없습니다.');
-      console.warn('→ API 상태:', data.debug?.apiStatus);
+      console.warn('→ API 상태:', formatApiStatus(data.debug));
       console.warn('→ 수동 입력 모드로 진행합니다.');
       return {
         success: true,
@@ -2340,13 +2358,13 @@ export default function App() {
          const res = await fetchChannelInfo(channelId);
          setIsLoading(false);
          if (res.success) {
-            setFetchedInfo(res.data);
-            // 수동 입력 모드: 채널 제목이 없으면 사용자가 입력해야 함
-            if (res.manualMode) {
-               alert(`⚠️ 채널 ID는 확인되었으나 상세 정보를 가져올 수 없습니다.\n(API 상태: ${res.debug?.apiStatus})\n\n아티스트 이름을 직접 입력해주세요.`);
+         setFetchedInfo(res.data);
+         // 수동 입력 모드: 채널 제목이 없으면 사용자가 입력해야 함
+         if (res.manualMode) {
+               alert(`⚠️ 채널 ID는 확인되었으나 상세 정보를 가져올 수 없습니다.\n(API 상태: ${formatApiStatus(res.debug)})\n\n아티스트 이름을 직접 입력해주세요.`);
                // 채널 ID만 설정하고, 이름은 비워둠
                setNames({ ko: "", en: "", ja: "" });
-            } else {
+         } else {
                // 채널 제목을 기본적으로 한국어 이름으로 설정 (필요시 변경 가능)
                setNames(prev => ({ ...prev, ko: res.data.title }));
             }
