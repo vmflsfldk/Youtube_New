@@ -5104,16 +5104,20 @@ async function fetchLiveBroadcastsForChannel(
     const snippet = snippetByVideo.get(videoId) ?? null;
     const details = detailsByVideo.get(videoId) ?? null;
 
-    // 실제로 라이브 중인 방송만 포함 (upcoming/scheduled 제외)
+    // 예정된 라이브만 명시적으로 제외 (upcoming/scheduled)
     const liveBroadcastContent = details?.snippet?.liveBroadcastContent ?? snippet?.liveBroadcastContent;
-    if (liveBroadcastContent !== "live") {
-      console.log(`[yt-clip] Skipping video ${videoId}: liveBroadcastContent=${liveBroadcastContent} (not actively live)`);
-      continue;
-    }
-
     const liveDetails = details?.liveStreamingDetails;
     const actualStartTime = normalizeTimestamp(liveDetails?.actualStartTime);
     const scheduledStartTime = normalizeTimestamp(liveDetails?.scheduledStartTime);
+
+    console.log(`[yt-clip] Video ${videoId}: liveBroadcastContent="${liveBroadcastContent}", actualStartTime=${actualStartTime}, scheduledStartTime=${scheduledStartTime}`);
+
+    // upcoming 상태이면서 아직 시작하지 않은 예정된 방송만 제외
+    if (liveBroadcastContent === "upcoming" && !actualStartTime) {
+      console.log(`[yt-clip] Skipping upcoming video ${videoId} (not started yet)`);
+      continue;
+    }
+
     const fallbackStartTime = normalizeTimestamp(snippet?.publishedAt);
     const title = sanitizeSnippetTitle(snippet);
     const fallbackTitle = typeof snippet?.title === "string" ? snippet.title.trim() : null;
