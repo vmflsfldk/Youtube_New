@@ -8,7 +8,7 @@ import {
   ListFilter, BarChart2, Radio, Disc, ListMusic, MoreHorizontal,
   LayoutList, Grid, ArrowUpDown, Globe, Building2, CheckCircle2, AlertCircle,
   Maximize2, Minimize2, Signal, FileVideo, Trash2, FolderPlus, PlayCircle, ListPlus,
-  LogOut, GripVertical, Pencil // 로그아웃, 드래그 핸들, 편집 아이콘
+  LogOut, GripVertical, Pencil, Menu, Bell // 로그아웃, 드래그 핸들, 편집 아이콘, 메뉴, 벨
 } from 'lucide-react';
 
 // --- Lightweight Cloudflare D1-style client (in-memory) ---
@@ -295,6 +295,7 @@ export default function App() {
     }
   });
   const [isMobileQueueOpen, setIsMobileQueueOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [toastMessage, setToastMessage] = useState(null);
 
@@ -873,13 +874,20 @@ export default function App() {
 
   const Sidebar = () => (
     <div className="w-60 bg-[#030303] h-full flex flex-col pt-4 pb-[72px] hidden md:flex flex-shrink-0 z-20 border-r border-[#1A1A1A]">
-      <div className="px-6 flex items-center gap-1 text-white font-bold text-xl cursor-pointer mb-8" onClick={() => setView('home')}>
-        <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center">
-           <Play fill="white" size={14} className="ml-0.5" />
-        </div>
-        <span className="tracking-tighter">Music</span>
+      {/* ▼▼▼▼▼ [수정됨] 브랜드 로고 영역 ▼▼▼▼▼ */}
+      <div
+        className="mb-8 px-6 cursor-pointer group inline-block"
+        onClick={() => setView('home')}
+      >
+        {/* PNG 로고 이미지 적용 */}
+        <img
+          src="/images/utahub-logo-horizontal.png"
+          alt="UtaHub Logo"
+          className="h-12 w-auto object-contain transition-transform group-hover:scale-105"
+        />
       </div>
-      
+      {/* ▲▲▲▲▲ [수정됨] 브랜드 로고 영역 ▲▲▲▲▲ */}
+
       {/* Main Nav: Takes up available space */}
       <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
         <SidebarItem icon={<Home />} label="홈" active={view === 'home'} onClick={() => setView('home')} />
@@ -945,6 +953,48 @@ export default function App() {
       {React.cloneElement(icon, { size: 22 })}
       <span className="text-sm font-medium">{label}</span>
     </button>
+  );
+
+  const MobileHeader = () => (
+    <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-[#030303]/95 backdrop-blur-md border-b border-[#222] z-[60] flex items-center justify-between px-4">
+      {/* 좌측: 메뉴 및 검색 */}
+      <div className="flex items-center gap-4">
+        <button onClick={() => setIsMobileMenuOpen(true)} className="text-[#AAAAAA] hover:text-white">
+          <Menu size={24} />
+        </button>
+        <button className="text-[#AAAAAA] hover:text-white">
+          <Search size={24} />
+        </button>
+      </div>
+
+      {/* ▼▼▼▼▼ [추가됨] 모바일 중앙 브랜드 심볼 ▼▼▼▼▼ */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+        <img
+          src="/images/utahub-symbol.png"
+          alt="UtaHub"
+          className="h-8 w-auto object-contain opacity-90"
+        />
+      </div>
+      {/* ▲▲▲▲▲ [추가됨] 모바일 중앙 브랜드 심볼 ▲▲▲▲▲ */}
+
+      {/* 우측: 알림 및 아바타 */}
+      <div className="flex items-center gap-4">
+        <button className="text-[#AAAAAA] hover:text-white relative">
+          <Bell size={24} />
+          <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+        </button>
+
+        {/* ▼▼▼▼▼ [수정됨] 모바일 기본 아바타 이미지 ▼▼▼▼▼ */}
+        <button className="group relative">
+          <img
+            src={user?.photoURL || "/images/default-avatar.png"}
+            alt="Profile"
+            className="w-8 h-8 rounded-full object-cover border border-[#282828] group-hover:border-[#AAAAAA] transition-colors"
+          />
+        </button>
+        {/* ▲▲▲▲▲ [수정됨] 모바일 기본 아바타 이미지 ▲▲▲▲▲ */}
+      </div>
+    </div>
   );
 
   const MobileNav = () => (
@@ -2925,6 +2975,7 @@ export default function App() {
     <div className="flex h-screen bg-[#030303] text-white font-sans overflow-hidden select-none">
       <Sidebar />
       <main className="flex-1 relative flex flex-col min-w-0 bg-[#030303]">
+        {/* 데스크톱 헤더 */}
         <header className="hidden md:flex h-16 items-center justify-between px-8 sticky top-0 z-10 bg-[#030303]/95 backdrop-blur-md">
            <div className="flex-1 max-w-xl relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#AAAAAA]" size={20} />
@@ -2932,7 +2983,11 @@ export default function App() {
            </div>
            <div className="ml-4 w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-blue-500 flex items-center justify-center text-xs font-bold">ME</div>
         </header>
-        <div className="flex-1 overflow-y-auto custom-scrollbar pb-[calc(64px+56px+env(safe-area-inset-bottom))] md:pb-24">
+
+        {/* 모바일 헤더 */}
+        <MobileHeader />
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar pb-[calc(64px+56px+env(safe-area-inset-bottom))] md:pb-24 pt-14 md:pt-0">
            {view === 'home' && <HomeView />}
            {view === 'artist_list' && <ArtistListView />}
            {view === 'artist_detail' && <ArtistDetailView />}
