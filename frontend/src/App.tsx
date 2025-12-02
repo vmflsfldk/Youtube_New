@@ -940,10 +940,10 @@ export default function App() {
         {user && !user.isAnonymous ? (
             // 로그인된 상태 (Logged In)
             <div className="flex items-center gap-3 group cursor-pointer p-2 rounded hover:bg-[#1A1A1A]">
-                <img 
-                    src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} 
-                    alt="Profile" 
-                    className="w-9 h-9 rounded-full bg-neutral-800 border border-[#333]" 
+                <img
+                    src={user.photoURL || "/images/default-avatar.png"}
+                    alt="Profile"
+                    className="w-9 h-9 rounded-full bg-neutral-800 border border-[#333]"
                 />
                 <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-white truncate">{user.displayName || "User"}</p>
@@ -3014,7 +3014,6 @@ export default function App() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#AAAAAA]" size={20} />
               <input type="text" placeholder="검색" className="w-full bg-[#212121] text-white pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:bg-white focus:text-black placeholder-[#AAAAAA] transition-colors" />
            </div>
-           <div className="ml-4 w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-blue-500 flex items-center justify-center text-xs font-bold">ME</div>
         </header>
 
         {/* 모바일 헤더 */}
