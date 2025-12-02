@@ -294,6 +294,7 @@ export default function App() {
       return false;
     }
   });
+  const [isMobileQueueOpen, setIsMobileQueueOpen] = useState(false);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
 
   const playerRef = useRef(null);
@@ -1186,8 +1187,21 @@ export default function App() {
     };
 
     return (
-        <div className="w-80 bg-[#030303] h-full hidden lg:flex flex-col border-l border-[#282828] pt-6 pb-24 z-20">
-            <div className="px-6 mb-6">
+        <div className={`
+            bg-[#030303] border-l border-[#282828] z-[60]
+            lg:w-80 lg:flex lg:flex-col lg:relative lg:pt-6 lg:pb-24 lg:translate-x-0
+            fixed inset-0 w-full h-full flex flex-col transition-transform duration-300
+            ${isMobileQueueOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
+        `}>
+            {/* Mobile-only header with close button */}
+            <div className="lg:hidden flex items-center justify-between px-6 py-4 border-b border-[#282828]">
+                <h3 className="text-white font-bold text-lg">재생 대기열</h3>
+                <button onClick={() => setIsMobileQueueOpen(false)} className="text-[#AAAAAA] hover:text-white">
+                    <ChevronRight size={24} />
+                </button>
+            </div>
+
+            <div className="px-6 mb-6 mt-4 lg:mt-0">
                 <h3 className="text-[#AAAAAA] text-sm font-bold mb-4 flex items-center gap-2">
                     <Radio size={14} className="text-red-500"/> 라이브 중인 아티스트
                 </h3>
@@ -2782,7 +2796,10 @@ export default function App() {
              >
                <Repeat size={20}/>
              </button>
-             <button className="hover:text-white hidden md:block" onClick={(e) => e.stopPropagation()}>
+             <button
+               className={`hover:text-white transition-colors ${isMobileQueueOpen ? 'text-red-500' : ''}`}
+               onClick={(e) => { e.stopPropagation(); setIsMobileQueueOpen(!isMobileQueueOpen); }}
+             >
                <ListMusic size={20}/>
              </button>
         </div>
